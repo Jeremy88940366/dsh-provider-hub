@@ -226,10 +226,37 @@ export function mintRequestId(timestamp = Date.now()) {
 }
 
 const SESSION_MAP_FILE = 'session-map.json'
+/**
+ * How many conversation seeds the map keeps.
+ *
+ * The map had no ceiling, and every new conversation — plus every probe session,
+ * every bench run and every ad-hoc script — added a row that was never removed.
+ * Each row makes the next `rememberSession` rewrite the whole file, so the cost
+ * of one new conversation grew with the number of conversations that had ever
+ * existed. The seeds are conversation ids: once a conversation is gone, its row
+ * can only serve a lookup that will never come.
+ *
+ * 256 is far more than the handful of live conversations a single client has,
+ * so eviction only ever drops seeds nobody is talking in any more. The cost of
+ * dropping one is a fresh session id for that conversation, which only matters
+ * for per-session quota accounting on the free lane.
+ */
+const MAX_SESSION_ROWS = 256
 let sessions
 
 function sessionStorePath() {
   try { return path.join(path.resolve(resolveDshHome(), DATA_DIR_NAME), SESSION_MAP_FILE) } catch { return undefined }
+}
+
+function evictSessions(map) {
+  // Map iteration follows insertion order, and `rememberSession` re-inserts on
+  // every use, so the first key is the least recently used seed.
+  while (map.size > MAX_SESSION_ROWS) {
+    const oldest = map.keys().next()
+    if (oldest.done === true) break
+    map.delete(oldest.value)
+  }
+  return map
 }
 
 function loadSessions() {
@@ -242,12 +269,14 @@ function loadSessions() {
     for (const [seed, id] of Object.entries(parsed?.sessions ?? {})) {
       if (typeof id === 'string' && SESSION_RE.test(id)) sessions.set(seed, id)
     }
+    // A store written by an unbounded version can already be oversized; trimming
+    // here means the first write after the upgrade persists the smaller map.
+    evictSessions(sessions)
   } catch { /* first run or unreadable store: start empty */ }
   return sessions
 }
 
-function rememberSession(seed, id) {
-  loadSessions().set(seed, id)
+function persistSessions() {
   try {
     const file = sessionStorePath()
     if (file === undefined) return
@@ -256,6 +285,17 @@ function rememberSession(seed, id) {
     fs.writeFileSync(temp, JSON.stringify({ version: 1, at: Date.now(), sessions: Object.fromEntries(sessions) }, undefined, 2))
     fs.renameSync(temp, file)
   } catch { /* non-fatal: the id still works, it just will not survive a restart */ }
+}
+
+function rememberSession(seed, id) {
+  const map = loadSessions()
+  // Delete before set: `Map.set` on an existing key keeps its original position,
+  // so a long-lived conversation would keep looking like the oldest entry and be
+  // the first thing evicted.
+  map.delete(seed)
+  map.set(seed, id)
+  evictSessions(map)
+  persistSessions()
 }
 
 /**

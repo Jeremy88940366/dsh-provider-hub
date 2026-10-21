@@ -495,7 +495,12 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
     try { JSON.parse(data.join('\n')); return true } catch { return false }
   }
   const line = value => {
-    const text = value.replace(/\r$/, '').replace(/^\uFEFF/, '')
+    // Two regex passes per line were measurable on a 10k-event answer; the
+    // strip only ever removes one trailing CR and one leading BOM, so a code
+    // unit test does the same work without entering the regex engine.
+    let text = value
+    if (text.charCodeAt(text.length - 1) === 13) text = text.slice(0, -1)
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1)
     if (rawJson || text.trimStart().startsWith('{')) {
       if (!rawJson && dispatch()) return true
       rawJson += (rawJson ? '\n' : '') + text
@@ -525,13 +530,18 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
       if (done) break
       if (Date.now() > deadline) throw new UpstreamError('provider-hub: upstream stream idle past its deadline', CODE.timeout)
       if (value !== undefined) buffer += decoder.decode(value, { stream: true })
-      let newline = buffer.indexOf('\n')
+      // Slice the buffer once per chunk instead of once per line: the old
+      // loop copied the whole remaining buffer for every newline, which on a
+      // 1.6 MB answer is quadratic in the number of events per chunk.
+      let start = 0
+      let newline = buffer.indexOf('\n', start)
       while (newline !== -1) {
-        const row = buffer.slice(0, newline)
-        buffer = buffer.slice(newline + 1)
+        const row = buffer.slice(start, newline)
+        start = newline + 1
         if (line(row)) return
-        newline = buffer.indexOf('\n')
+        newline = buffer.indexOf('\n', start)
       }
+      if (start > 0) buffer = buffer.slice(start)
       deadline = Date.now() + timeoutMs
     }
     // Flush the decoder so a multi-byte character split over the last two chunks

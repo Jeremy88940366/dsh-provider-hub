@@ -1,7 +1,7 @@
 {
-  "version": "3.6.2",
+  "version": "3.7.0",
   "base": "../",
-  "publishedAt": "2026-10-21T17:41:41.662Z",
+  "publishedAt": "2026-10-21T17:54:03.590Z",
   "notes": "",
   "files": [
     {
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "e00baee9a4fc4943835b036f9b4d1038ae043107d9c2f8e4c2a5c7d61ba90bfb"
+      "sha256": "63fd431554fb233deb62e39f08528998b243a453add6e266ad6d3d58e60e356f"
     },
     {
       "path": "src/adapter.js",
@@ -146,8 +146,8 @@
     },
     {
       "path": "src/http.js",
-      "size": 27982,
-      "sha256": "1ebd8d96458420aa8551f56e7af56a6f3406cc50ca054d59aefb13200709f65a"
+      "size": 28594,
+      "sha256": "e9093114dfe76669027b387e34e341823128953874f31998ff015a33ca4c1963"
     },
     {
       "path": "src/image-pricing.d.ts",
@@ -346,8 +346,8 @@
     },
     {
       "path": "src/upstream.js",
-      "size": 27277,
-      "sha256": "c119e68ec2fb48021adb408dcdc09d487192ac95430b3462909fa4902f06510f"
+      "size": 28946,
+      "sha256": "7b983a32efbafe7f43ccc5ada65d7967d143f45513e9a517ef7dcafe592446df"
     },
     {
       "path": "src/vault-anchor.js",
@@ -385,5 +385,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "ncJ4hFwj3RzDl0A9al+1Wq/1biWUlZLsdiNhKgANwpmQdFcnM0sj19uMSZO5yOMcB2wglTqC16/+J+m6sqc5Cw=="
+  "signature": "cpXYJmxYVgp3RAyPsk+VrLgV7d0P9EPO5M6Rb1kQms/Q88PppM4mDodTBv1ycyz9TS4ZQMcRUEnHnZuDPHLQBg=="
 }

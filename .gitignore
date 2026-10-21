@@ -4,4 +4,5 @@ node_modules/
 feed/manifest.json.bak
 .DS_Store
 Thumbs.db
-.verify-remote.mjs
+# 一次性诊断脚本：点开头 + .mjs，绝不进仓库
+.*.mjs
