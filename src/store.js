@@ -149,6 +149,36 @@ export function dayKey(at = Date.now()) {
   return `${y}-${m}-${d}`
 }
 
+/**
+ * Settings that shipped in an earlier version and no longer have a reader.
+ *
+ * `feedUrl` / `feedPollMinutes` / `notifyOs` drove the remote announcement feed,
+ * which is gone: the repository this plugin is built from has never published an
+ * `announcements.json`, so the poll could only ever 404. `announcementsAcked`
+ * tracked per-item acknowledgements for the same feed. Dropping them from
+ * SETTINGS_INITIAL stops new installs writing them, but an upgraded install keeps
+ * them in its settings.json until something removes them — a config document
+ * should not accumulate rows nobody reads.
+ */
+export const RETIRED_SETTINGS = ['feedUrl', 'feedPollMinutes', 'notifyOs', 'announcementsAcked']
+
+/**
+ * Strip {@link RETIRED_SETTINGS} from a stored settings document.
+ *
+ * Returns the value to store, or `undefined` when there was nothing to drop —
+ * the mutator contract of {@link JsonStore.edit}, so an already-clean file does
+ * not get rewritten on every boot.
+ *
+ * @param {object} value - cloned settings document
+ * @returns {object|undefined}
+ */
+export function migrateSettings(value) {
+  const present = RETIRED_SETTINGS.filter(key => Object.hasOwn(value, key))
+  if (present.length === 0) return undefined
+  for (const key of present) delete value[key]
+  return value
+}
+
 export const SETTINGS_INITIAL = {
   version: 1,
   /** Master switch: when off the routes stay registered but serve nothing. */
@@ -225,16 +255,6 @@ export const SETTINGS_INITIAL = {
   announcementAck: '',
   /** Last full catalog refresh timestamp. */
   catalogSyncedAt: 0,
-  /** Owner override for the announcement/update feed location. `{repo}` expands
-   *  to the plugin repository slug; empty means the shipped GitHub sources. */
-  feedUrl: '',
-  /** Minutes between announcement-feed polls; floored at 5. */
-  feedPollMinutes: 30,
-  /** Raise OS-level notifications for new announcements and updates (the
-   *  browser asks for permission on the user's click). */
-  notifyOs: false,
-  /** Announcement ids the user has acknowledged. */
-  announcementsAcked: [],
   /** Hours between automatic update checks; 0 disables them entirely. */
   updateCheckHours: 6,
   /** Version whose update availability has already been pushed. */

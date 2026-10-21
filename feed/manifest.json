@@ -1,7 +1,7 @@
 {
-  "version": "3.3.1",
+  "version": "3.3.2",
   "base": "../",
-  "publishedAt": "2026-10-21T16:29:35.214Z",
+  "publishedAt": "2026-10-21T16:34:37.061Z",
   "notes": "",
   "files": [
     {
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "caa29944e936d0111430a768cbd187ea173b2edc4b6dac74096ce8e20c857809"
+      "sha256": "28ea74b6b8a9b8f43d8db83a3ababe60b3fa4e134e458fd673f1679dfda5773d"
     },
     {
       "path": "src/adapter.js",
@@ -96,8 +96,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 22222,
-      "sha256": "0e7682b44f444e077e362a248c19dfe4c9a73921b6f6b417ed94d346461d1a3c"
+      "size": 22436,
+      "sha256": "2e4bba8b1f1e18bf02bba1065edcab9e7fc59fdcf957d0f9aface6c8ed40d726"
     },
     {
       "path": "src/core/stats.js",
@@ -221,8 +221,8 @@
     },
     {
       "path": "src/store.js",
-      "size": 24273,
-      "sha256": "19830ecac76708519c13fc9762eb45a2f25a0e34c2c936a272f3285c0b495131"
+      "size": 25078,
+      "sha256": "29b24f78012b0636f6d9e415d1cb61c6136dbc1f3fa96a45f467f6389aa4489a"
     },
     {
       "path": "src/stream.js",
@@ -385,5 +385,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "zGzkJxFDf40tW9rHE8dJKOQrXfDJkBSIKMod0wwA8IH0j9Iji5Lf2/Lf0ARV4xyHJotCobUUPBuCHm5ywEBiCA=="
+  "signature": "7F/p08JYk5m4WEjpPwQDzLIQ4bD2Zm0Ws6bX5euO9w4p/VNZjHSZBm59mD0CVe2mgmczzWCUzrbnnIr8HtlVBQ=="
 }
