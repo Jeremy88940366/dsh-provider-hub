@@ -150,6 +150,12 @@ export function createModelRuntime({
     }
     return ids
   }
+  // Trim once at boot, not only on the next write. Rows left behind by a lane
+  // that left the roster would otherwise sit in `/stats` until the user happens
+  // to make a call — and a user reading the stats page to find out why is
+  // exactly the one who never makes that call. `trimStats` returns the same
+  // object when there is nothing to drop, so a clean store is not rewritten.
+  stats.edit(value => trim(value))
   const adapter = new FreeModelAdapter({
     state,
     resolveImage,

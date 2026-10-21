@@ -1,7 +1,7 @@
 {
-  "version": "3.5.0",
+  "version": "3.5.1",
   "base": "../",
-  "publishedAt": "2026-10-21T16:55:31.158Z",
+  "publishedAt": "2026-10-21T16:56:58.013Z",
   "notes": "",
   "files": [
     {
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "f6ad4c345382557b975207bb64e10cee2c67c0c03ae1d483eb5cf79f8da91cf2"
+      "sha256": "d81bea864700bb088a645e6af11f31c9ca9d0ce977eec8278a63a8f268759b67"
     },
     {
       "path": "src/adapter.js",
@@ -96,8 +96,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 23652,
-      "sha256": "8905060f1f2162977b4c302ed650b38cbb1bfd3fd87ee502317d1e96f0e3e668"
+      "size": 24079,
+      "sha256": "d0edd529f70e4c9b0cdefea8416590ae586cfc49939e85e3bce4700579122804"
     },
     {
       "path": "src/core/stats.js",
@@ -385,5 +385,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "8qanMhy5ZNgWGBmwtiqUL8IrkPOVIWDCYwA7Qc4RJN+xS8m8oXnVC7lAur9iZFk6GOP7YszcJ/5/IG50ZbfCCg=="
+  "signature": "fqJPP06FayAPBy+1dj4Mt72jcgVeNHzPf7a8zGjs9x94D5Yd6AZuaPlIdTUn3GsuRJHASPG2Sg4cxsabNgVjAA=="
 }
