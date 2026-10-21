@@ -4,7 +4,7 @@
 的完整拷贝，由 `provider-hub` 的 Host 半身在独立 fiber 上挂载，
 使 CodeArts、CodeBuddy、WorkBuddy、LobsterAI、Qoder、Qoder 中国版、TRAE、
 Cline、Loomy、Raccoon、MiniMax Code、ZCode、Gemini 这十三个账号渠道的
-登录流程、账号池、积分领取、模型黑名单与本地 OpenAI 网关可用。OFM 挂载时关闭上游 OpenCode 账号接入，原有匿名免费车道保持独立。
+登录流程、账号池、积分领取、模型黑名单与本地 OpenAI 网关可用。Provider Hub 挂载时关闭上游 OpenCode 账号接入，原有匿名免费车道保持独立。
 目录名与内部标识符在本插件的再构建中统一改为 channel-pack；出处与许可证不变。
 
 - 上游仓库：`https://gitee.com/iJetLi/deepseek-harness-codearts`
@@ -15,7 +15,7 @@ Cline、Loomy、Raccoon、MiniMax Code、ZCode、Gemini 这十三个账号渠道
 
 | 路径 | 说明 |
 | --- | --- |
-| `src/` | 上游 TypeScript 源码，包含下述 OFM 本地适配（便于审计与再构建） |
+| `src/` | 上游 TypeScript 源码，包含下述 Provider Hub 本地适配（便于审计与再构建） |
 | `pack.js` | **插件运行时实际加载的代码**：直接由 `src/` 经 `scripts/build-channel-pack.mjs` 打包成单文件（jose/undici 内联，`@deepseek-ai/*` 保持外部），使发布清单不超文件上限 |
 | `qoder-auth-wasm.wasm` | Qoder 加密推理所需的 WASM，必须与 `pack.js` 同目录（`pack.js` 按 `import.meta.url` 定位它） |
 | `locale/` | 上游文案 |
@@ -41,9 +41,9 @@ HUB_ESBUILD_DIR=/tmp/ofm-channel-build npm run channel-pack
 rm -rf vendor/channel-pack/node_modules
 ```
 
-## OFM 本地适配
+## Provider Hub 本地适配
 
-- `src/index.ts`：增加可选 `disableOpencode` 挂载配置；OFM 开启它时跳过重复 OpenCode adapter、默认匿名账号和能力表预热，保留历史账号及凭据。省略时维持上游行为。
+- `src/index.ts`：增加可选 `disableOpencode` 挂载配置；Provider Hub 开启它时跳过重复 OpenCode adapter、默认匿名账号和能力表预热，保留历史账号及凭据。省略时维持上游行为。
 - `src/channel-pack-rpc.ts`：追加同一配置，关闭时拒绝 `opencode.*` 与通用 `account.create(provider=opencode)`。
 - 打包入口改为 `src/index.ts`；宿主模块仍保持外部，jose/undici 内联。
 - 构建依赖固定为 esbuild 0.24.2、jose 6.2.9、undici 8.11.2；本次重构建核对了原包的依赖代码，未借此升级运行依赖。

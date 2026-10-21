@@ -47,7 +47,7 @@ function openAiError(res, status, code, message) {
   res.end(JSON.stringify({ error: { message, type: code, code } }))
 }
 
-/** Match the vendored resolveChannelPackHome order, without moving OFM's data. */
+/** Match the vendored resolveChannelPackHome order, without moving Provider Hub's data. */
 export function chanGatewayHome({ profileContext, env = process.env } = {}) {
   const override = String(env.DSH_CHANNEL_PACK_STATE_DIR ?? '').trim()
   if (override !== '') return override

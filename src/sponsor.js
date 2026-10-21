@@ -68,7 +68,7 @@ export function createSponsorUI(React, image, createPortal, variant = 'plugin') 
     const paragraph = index => h('p', { key: index }, SPONSOR.paragraphs[index])
     return h('article', { className: 'ofm-sponsor-article' },
       h('div', { className: 'ofm-sponsor-intro' },
-        h('div', null, h('h2', null, '让免费服务，继续陪伴。'), h('p', null, '一封来自 OFM 团队的说明，也是一份坦诚的赞助邀请。')),
+        h('div', null, h('h2', null, '让免费服务，继续陪伴。'), h('p', null, '一封来自 Provider Hub 团队的说明，也是一份坦诚的赞助邀请。')),
         h('span', { className: 'ofm-sponsor-seal', 'aria-hidden': true }, icon('cup', 26))),
       h('div', { className: 'ofm-sponsor-letter' },
         h('p', { className: 'ofm-sponsor-greeting' }, SPONSOR.greeting),
@@ -80,7 +80,7 @@ export function createSponsorUI(React, image, createPortal, variant = 'plugin') 
             h('button', { type: 'button', onClick: () => copy(SPONSOR.invite, '邀请码') }, '复制邀请码')),
           h('span', { className: 'ofm-sponsor-copy-status', role: 'status' }, copied)),
         paragraph(3), paragraph(4), paragraph(5),
-        h('div', { className: 'ofm-sponsor-signoff' }, h('span', null, '感谢你的理解与陪伴'), h('strong', null, 'OFM 团队'))),
+        h('div', { className: 'ofm-sponsor-signoff' }, h('span', null, '感谢你的理解与陪伴'), h('strong', null, 'Provider Hub 团队'))),
       h('figure', { className: 'ofm-sponsor-evidence' },
         h('figcaption', null, h('strong', null, '另附：中转站鹈鹕测试'), h('span', null, '发现问题直接电 · 以下为提供的原图')),
         h('img', { src: image, alt: '提供的生成示例：三幅图像分别展示骑行鹈鹕和山河场景，下方保留模型名称、生成时间与耗时。', width: 1227, height: 367, loading: 'lazy', decoding: 'async' })),
@@ -90,7 +90,7 @@ export function createSponsorUI(React, image, createPortal, variant = 'plugin') 
 
   function SponsorPage() {
     return h('section', { className: surfaceClass + ' ofm-sponsor-page', 'aria-labelledby': 'ofm-sponsor-page-title' },
-      h('header', { className: 'ofm-sponsor-pagehead' }, h('h1', { id: 'ofm-sponsor-page-title' }, SPONSOR.title), h('p', null, '北辰 API × OFM · 你可以在这里随时阅读全文。')),
+      h('header', { className: 'ofm-sponsor-pagehead' }, h('h1', { id: 'ofm-sponsor-page-title' }, SPONSOR.title), h('p', null, '北辰 API × Provider Hub · 你可以在这里随时阅读全文。')),
       h(SponsorArticle))
   }
 
@@ -199,7 +199,7 @@ export function createSponsorUI(React, image, createPortal, variant = 'plugin') 
     return createPortal(h('dialog', { ref: dialog, className: `${surfaceClass} ofm-sponsor-dialog${leaving ? ' is-closing' : ''}`, 'aria-labelledby': 'ofm-sponsor-dialog-title', 'aria-describedby': 'ofm-sponsor-dialog-description', 'data-placement': placement,
       onCancel: event => { event.preventDefault(); dismiss() },
       onClick: event => { if (event.target === dialog.current) { const r = dialog.current.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dismiss() } } },
-      h('header', { className: 'ofm-sponsor-dialoghead' }, h('div', null, h('h2', { id: 'ofm-sponsor-dialog-title' }, SPONSOR.title), h('p', { id: 'ofm-sponsor-dialog-description' }, '北辰 API × OFM · 每天首次打开时展示一次')),
+      h('header', { className: 'ofm-sponsor-dialoghead' }, h('div', null, h('h2', { id: 'ofm-sponsor-dialog-title' }, SPONSOR.title), h('p', { id: 'ofm-sponsor-dialog-description' }, '北辰 API × Provider Hub · 每天首次打开时展示一次')),
         h('button', { type: 'button', className: 'ofm-sponsor-close', autoFocus: true, onClick: dismiss, 'aria-label': '收起公告到广告菜单', title: '收起到广告菜单（Esc）' }, icon('close'))),
       h('div', { className: 'ofm-sponsor-scroll', tabIndex: 0, role: 'region', 'aria-label': '广告全文，可向下滚动' }, opened ? h(SponsorArticle) : null),
       h('footer', { className: 'ofm-sponsor-dialogfoot' }, h('p', null, '无需读完，也可以随时收起。', h('span', null, '全文会留在广告菜单中。')),
