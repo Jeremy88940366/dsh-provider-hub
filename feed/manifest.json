@@ -1,7 +1,7 @@
 {
-  "version": "3.0.9",
+  "version": "3.1.0",
   "base": "../",
-  "publishedAt": "2026-10-21T15:22:19.106Z",
+  "publishedAt": "2026-10-21T15:25:37.388Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 532540,
-      "sha256": "6f75ce912793d25aff0ced92b67ad25413bf8c7a174dde9214f12415e1e32de6"
+      "size": 508046,
+      "sha256": "b535fc159e664ffbbab9acb51ab2346b565d41d8faa55d790d8816c3c7593dc5"
     },
     {
       "path": "cordis.patch.yml",
@@ -36,8 +36,8 @@
     },
     {
       "path": "index.js",
-      "size": 112953,
-      "sha256": "ded25d6d2a230db5ccdb358b3310ffa8baddbcf626b145dbae93357ff98d5958"
+      "size": 112426,
+      "sha256": "348306e8bf8bfcd87bf8bbb949fc5f9910dfd15daaf3a516f774d477525efdad"
     },
     {
       "path": "locale/en.json",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2903,
-      "sha256": "2f9ef1b09a853ebf875357a1983bdfba887a5e5723db2e3dc43d1a340b83634a"
+      "sha256": "e1de311369d179c49b0f071e2849e772c6e7fb94d8a3ad8358ea878e275e0b57"
     },
     {
       "path": "src/adapter.js",
@@ -188,11 +188,6 @@
       "path": "src/open-external.js",
       "size": 1452,
       "sha256": "5deefbdcf8823bbb7d7f8ca291e20b8cf0b87819473df94702e43ef6c3fc2f40"
-    },
-    {
-      "path": "src/picks.js",
-      "size": 7957,
-      "sha256": "468490e555d394f0dad644edad232eed7567d239332bd9982dfccc188aa59f48"
     },
     {
       "path": "src/probe.js",
@@ -405,5 +400,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "+NxLyJFVKZQ7xHtwjSQT+t2mBjhurJvTbDksLnfak+ZsBW/DaMQets0M9zRYrglJMD8FCC1gYvU5ZuzpPAi0DA=="
+  "signature": "pCbreYvbxcAmlqvBSvmPL6vpVJpCn/VVYHtJwvGqI1Chgaj2pr10UVjAzwOj6z4P4hHL4qOSzQOhtYYCTQJFDQ=="
 }
