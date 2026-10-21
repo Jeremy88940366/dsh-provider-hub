@@ -35,7 +35,6 @@ window.__ModuleLoader__.load({
     // ── copy ──────────────────────────────────────────────────────────────────
     const DICT = {
       zh: {
-        'meta.title': 'Provider Hub',
         'meta.description': '在 DeepSeek Harness 内直连免密免费模型：清单随上游更新、地区可用性自动探测、思考强度真实生效，并附 Token 看板与 OpenAI 兼容转发端口。',
         'ann.pitch': '你只需在 dsh 里装上这个插件，无需登录、注册、填 API Key 或任何其它操作，就能用上包括 Muse Spark 1.3、MiMo V2.6 在内的前沿模型——完全免费，不限量。',
         nav: 'Provider Hub',
@@ -281,10 +280,6 @@ window.__ModuleLoader__.load({
         'section.upgrade': '插件升级',
         'section.upgradeHint': '更新方式取决于安装来源；由宿主管理的安装请通过原安装方式更新。',
         'upgrade.managed': '此安装由安装它的宿主管理，请通过原安装方式更新；插件内检查、升级和热重载不可用。',
-        'level.info': '通知',
-        'level.update': '更新',
-        'level.warn': '注意',
-        'level.urgent': '紧急',
         'upgrade.current': '运行版本',
         'upgrade.installed': '磁盘版本',
         'upgrade.mismatch': '运行版本与磁盘版本不一致，请先确认安装状态，再重载或重启。',
@@ -316,7 +311,6 @@ window.__ModuleLoader__.load({
         'reload.done': '插件已热重载（第 {n} 次）。',
         'reload.refresh': '刷新页面',
         'reload.auto': '文件变化自动热重载',
-        'toast.annTitle': '新公告',
         'toast.updateTitle': '插件可升级',
         'toast.updateBody': '发现新版本 {latest}（当前 {current}），可到设置页升级。',
         'nav.tab.free': '免费模型',
@@ -669,7 +663,6 @@ window.__ModuleLoader__.load({
         'gw.clientsModels': '可转发模型 {n} 个',
       },
       en: {
-        'meta.title': 'Provider Hub',
         'meta.description': 'Free no-key models inside DeepSeek Harness: a roster that follows upstream, live regional availability, genuinely enforced thinking levels, a token dashboard and an OpenAI-compatible local forward port.',
         'ann.pitch': 'All you do is install this plugin in dsh — no login, no sign-up, no API key, no other step of any kind. The frontier models are simply there, Muse Spark 1.3 and MiMo V2.6 among them. Completely free, with no usage cap.',
         nav: 'Provider Hub',
@@ -915,10 +908,6 @@ window.__ModuleLoader__.load({
         'section.upgrade': 'Plugin upgrade',
         'section.upgradeHint': 'Update according to the installation source; host-managed installs use their original installation method.',
         'upgrade.managed': 'This installation is managed by the host that installed it. Update through the original installation method; in-plugin checks, upgrades and hot reload are unavailable.',
-        'level.info': 'Notice',
-        'level.update': 'Update',
-        'level.warn': 'Heads-up',
-        'level.urgent': 'Urgent',
         'upgrade.current': 'Running',
         'upgrade.installed': 'On disk',
         'upgrade.mismatch': 'The running and on-disk versions differ. Check the installation before reloading or restarting.',
@@ -950,7 +939,6 @@ window.__ModuleLoader__.load({
         'reload.done': 'Plugin hot-reloaded (#{n}).',
         'reload.refresh': 'Reload page',
         'reload.auto': 'Hot-reload on file change',
-        'toast.annTitle': 'New announcement',
         'toast.updateTitle': 'Plugin update available',
         'toast.updateBody': 'Version {latest} is out (installed {current}). Upgrade from the settings page.',
         'nav.tab.free': 'Free models',
@@ -1485,19 +1473,6 @@ window.__ModuleLoader__.load({
 .ofm_kvc span{font-size:10.5px;color:var(--dsw-alias-label-tertiary)}
 .ofm_two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 /* ══ 公告中心 ══════════════════════════════════════════════════════════ */
-.ofm_news{display:flex;flex-direction:column;gap:10px}
-.ofm_newsitem{display:flex;flex-direction:column;gap:7px;padding:13px 15px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);position:relative;transition:border-color .18s ease,transform .2s cubic-bezier(.32,.72,0,1),box-shadow .22s ease}
-.ofm_newsitem:hover{transform:translateY(-1px);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 8px 22px rgb(0 0 0 / 10%)}
-.ofm_newsitem.unread{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}
-.ofm_newsdot{position:absolute;top:14px;right:14px;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-state-business-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-business-primary) 18%,transparent)}
-.ofm_newshead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-right:16px}
-.ofm_newstitle{font-size:13px;font-weight:650;letter-spacing:-.1px}
-.ofm_level{font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.ofm_level.info{color:var(--dsw-alias-state-business-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 9%,transparent)}
-.ofm_level.update{color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,transparent)}
-.ofm_level.warn{color:var(--dsw-alias-state-warning-primary,#f0a441);border-color:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 9%,transparent)}
-.ofm_level.urgent{color:#fff;background:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 85%,#000)}
-.ofm_newsmeta{display:flex;gap:10px;font-size:11px;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap}
 .ofm_newsbody{font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .ofm_newsbody p{margin:0 0 6px}
 .ofm_newsbody p:last-child{margin-bottom:0}
@@ -3464,10 +3439,6 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ofm_pill' }, `${t('pref.egress')}: ${summary.egress?.ip ?? '—'}${summary.egress?.country ? ` (${summary.egress.country})` : ''}`),
           h('span', { className: 'ofm_pill' }, `${t('pref.probedAt')}: ${ago(summary.probedAt, t.locale)}`)))
     }
-
-    // ── announcement center ──────────────────────────────────────────────────
-    const LEVEL_KEY = { info: 'level.info', update: 'level.update', warn: 'level.warn', urgent: 'level.urgent' }
-
 
 
     // ── in-app upgrade ───────────────────────────────────────────────────────

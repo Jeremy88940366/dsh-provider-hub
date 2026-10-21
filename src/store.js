@@ -239,7 +239,9 @@ export const SETTINGS_INITIAL = {
     {
       id: 'combo:recommended-free',
       name: '推荐免费组',
-      models: ['deepseek-v4.1-flash-free', 'glm-5.3-flash-free', 'space-bunny-free'],
+      // space-bunny-free was dropped by the upstream listing; a shipped default
+      // that names a model nobody can select renders as a two-model chain.
+      models: ['deepseek-v4.1-flash-free', 'glm-5.3-flash-free', 'mimo-v2.6-flash-free'],
       strategy: 'fallback',
       stickyLimit: 1,
       enabled: true,
