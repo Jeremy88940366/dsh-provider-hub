@@ -1438,16 +1438,6 @@ export function apply(ctx, config) {
     })().catch(error => logger.warn?.(`provider-hub: startup refresh failed (${error?.message ?? error})`))
   }, 'provider-hub: boot refresh')
 
-  // Feed poll: shortly after boot, then on the configured period. Concurrency
-  // with a manual refresh is harmless — polls share one in-flight request.
-  // A managed install polls nothing: the pack speaks for the plugin.
-  ctx.effect(() => {
-    if (managed) return
-    const first = setTimeout(() => { void feed.poll() }, 12_000)
-    first.unref?.()
-    return () => clearTimeout(first)
-  }, 'provider-hub: first feed poll')
-
   /**
    * Run one task every `ms` for as long as this generation lives.
    *
@@ -1479,7 +1469,6 @@ export function apply(ctx, config) {
 
   if (!managed) {
     every(() => {
-      void feed.poll()
       const hours = settings.get().updateCheckHours ?? 6
       if (hours > 0) void updater.check().then(() => pushUpdate(false)).catch(() => {})
     }, () => positiveOr(settings.get().feedPollMinutes, 30, 5) * 60_000)
