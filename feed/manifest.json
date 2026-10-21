@@ -1,7 +1,7 @@
 {
-  "version": "3.2.0",
+  "version": "3.2.1",
   "base": "../",
-  "publishedAt": "2026-10-21T15:36:42.327Z",
+  "publishedAt": "2026-10-21T15:39:38.300Z",
   "notes": "",
   "files": [
     {
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "ad0d8253787104be253ce28ba84ae9e79237eb21074c15ac8816e5da9aec9e9e"
+      "sha256": "ef5841964a60c24bf249fd2edc467ac23f5d92a9e627e7de119d35f36d992d84"
     },
     {
       "path": "src/adapter.js",
@@ -225,11 +225,6 @@
       "sha256": "9123be50f8284a9a8735abac7c0e541e726fdfdce1de9aab841e4e5bbe348e17"
     },
     {
-      "path": "src/sponsor.css",
-      "size": 10528,
-      "sha256": "ce751e456ff4b0ddad7979fa0fc9c6e27f19244c0d9e3912611a8f493d923293"
-    },
-    {
       "path": "src/store.js",
       "size": 24273,
       "sha256": "19830ecac76708519c13fc9762eb45a2f25a0e34c2c936a272f3285c0b495131"
@@ -395,5 +390,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "PdjzHAcnYXsmaORVSQ30/oKx4rGbzpnEcDJHV2GxZtJcFyY0nGiTCULERPOAOD35AcURXfC5O4XcY2AW3+wABQ=="
+  "signature": "6Clg9GvANkoWAP+3AcP4OAevOLi1VkFOm4Jp/6v9mnYNy3oRHN/5TNQ9xXG3DFC8jUU3Dys52GrDhg94zv9GCA=="
 }
