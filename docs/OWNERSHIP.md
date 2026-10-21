@@ -1,63 +1,74 @@
 # 维护说明
 
-本仓库是 `dsh-provider-hub` 的源码与发布清单，由维护者自行管理。
+这是 Provider Hub 的个人维护分支。本文件记录「哪些是我们自己的改动」以及「怎么把上游的更新吸进来」。
 
-## 基本信息
+## 与上游的关系
 
-| 项 | 值 |
+上游：`Ebony-Vinyl/dsh-our-free-model`（MIT）。
+
+本仓库 = 上游 + 一套**机械的改名映射** + 少量真实改动。实测我们的源码里约 99.7% 的行等于「上游原文套上改名映射」的结果，真正属于我们自己的改动只有几十行。这个比例是「能持续吸收上游优点」的前提：差异越机械，越能自动合并。
+
+## 同步上游更新
+
+```bash
+git fetch upstream --tags        # 首次：git remote add upstream https://github.com/Ebony-Vinyl/dsh-our-free-model.git
+node scripts/sync-upstream.mjs --list        # 看有哪些新版本
+node scripts/sync-upstream.mjs               # 试运行，只看会改什么
+node scripts/sync-upstream.mjs --apply       # 真正写入
+```
+
+它做的事：把上游「基线版本」和「目标版本」**都套上同一个改名映射**，再和我们的文件做三路合并（`git merge-file`）。所以上游的功能改动会进来，而我们的改动（删掉的推广页、赞助条、公告中心，以及保留下来的渠道）不会被冲掉。
+
+- **基线**记在 `sync-base.json`，只在无冲突且 `--apply` 成功后才推进。
+- **冲突**会以 `<<<<<<<` 标记写进文件，脚本退出码 2。解决完再跑一次。
+- **永远保留本地版本**的文件（写在脚本的 `KEEP_OURS`）：`README.md`、`package.json`、`feed/manifest.json`、`cordis.patch.yml`、`LICENSE`。上游对它们的改动只在报告里列出，不会覆盖。
+- **不跟随上游的路径**（`SKIP_PATHS`）：`.github/`、`packages/standalone/`、`catalog/`、`docs/`、`scripts/`（上游的测试脚本）、`feed/announcements.json`、`src/sponsor.*`、`src/feed.js`、`src/picks.js`。
+
+## 改名映射
+
+定义在 `scripts/sync-upstream.mjs` 的 `RENAME` 数组里，顺序敏感（长的先替换）。改动任何标识时，**这里必须同步更新**，否则下次同步会把上游的旧名字带回来。
+
+| 上游 | 本仓库 |
 |---|---|
-| npm 包名 | `dsh-provider-hub` |
-| 版本线 | `3.x`（独立演进） |
-| 更新源 `REPO` | `Jeremy88940366/dsh-provider-hub`（可用环境变量 `HUB_REPO` 覆盖） |
-| 清单签名公钥 | `MCowBQYDK2VwAyEAIWxF+wpq0X+nU+85t4HyyPBtHu+L5ru+i5JLjCobe0k=` |
+| `dsh-our-free-model` | `dsh-provider-hub` |
+| `our-free-model` | `provider-hub` |
+| `Our Free Model` / `our free model` | `Provider Hub` / `provider hub` |
+| `OFM_*` / `OUR_FREE_MODEL_*` | `HUB_*` / `PROVIDER_HUB_*` |
+| `Ebony-Vinyl` | `Jeremy88940366` |
 
-自更新管线只接受用 pin 在 `src/updater.js` 里的公钥签过名的 `feed/manifest.json`。公钥为本仓库持有，私钥只在本机，**只有本仓库能给这个插件发版**。
+CSS 类名前缀 `ofm_`（1501 处）**故意保留不改**——纯视觉，不影响任何功能，改了只会让上游 diff 变大。
 
-## 运行期标识
+## 本仓库自己的改动（相对上游 v2.5.7）
 
-- `export const name = 'provider-hub'` —— Cordis 插件名，补丁层按它挂配置
-- `DATA_DIR_NAME = 'provider-hub'` —— 数据在 `~/.dsh/provider-hub/`（settings、feed 缓存、catalog、登录态、统计）
-- 账号池在 `~/.dsh/channel-pack/state.json`，凭据在 `~/.dsh/.credentials.yaml`，与本插件目录解耦
+1. **改名**：包名、插件 id、API 路由、数据目录、界面标题、环境变量前缀、仓库 slug。
+2. **移除推荐项目页**（3.1.0）：上游作者的另外几个仓库的推广卡片与 star 统计。
+3. **移除赞助条**（3.2.0）：`src/sponsor.js` 死文件 + `client.js` 里内联的邀请码链接、24 KB base64 logo、CSS 与文案。
+4. **移除公告中心**（3.2.0）：本仓库不发布公告，`feed/` 里没有 `announcements.json`，原实现每 30 分钟拉一次注定 404 的地址。一次性欢迎弹窗（`ann.*`）与 `/announcements` 路由保留。
+5. **保留 WorkBuddy / CodeBuddy 渠道**：上游 2.5.8 以合规原因移除了这两个渠道，本分支保留，并补齐了直连路径的腾讯渠道内容指纹清洗（`vendor/channel-pack/pack.js` 的 `sanitizeTencentMessages`）。
+6. **移植上游 2.5.8 的三项更新机制改动**：更新失败重试（备份目录重命名重试 + 复用已校验暂存）、转发/网关保留 `reasoning_content`（含单个空格占位）、Qoder 思考档位按强度排序。
+7. **签名信任根换成自己的**：`feed/manifest.json` 用本仓库 `keys/manifest-ed25519-private.pem` 签名，公钥 pin 在 `src/updater.js` 的 `PINNED_MANIFEST_PUBLIC_KEY`。上游的清单在本仓库验不过（这是有意的）。
 
-## 私钥
-
-```
-C:\Users\Administrator\.dsh\provider-hub\keys\manifest-ed25519-private.pem   ← 私钥，0600，绝不入库
-C:\Users\Administrator\.dsh\provider-hub\keys\manifest-ed25519-public.txt    ← 公钥（已固化进 src/updater.js）
-```
-
-私钥丢失 = 以后发的版装不上（需改源码里的公钥再重新分发）。建议抄一份到离线介质。
-
-## 发版流程
-
-1. 改代码，改 `package.json` 的 `version`。
-2. 生成并签名清单：
+## 发版
 
 ```bash
-node scripts/sign-release.mjs --notes NOTES.md
+# 1. 改 package.json 的 version
+# 2. 重签清单（会校验文件树与签名）
+node scripts/sign-release.mjs --notes "这一版改了什么"
+# 3. 提交推送
+git add -A && git commit -m "x.y.z: ..." && git push
 ```
 
-脚本展开 `package.json` 的 `files[]` 白名单、逐个算 SHA-256、用本机私钥签名，**再用源码里 pin 的公钥验一遍**才落盘。文件数超过 80 或单文件超过 4 MiB 会直接报错（安装端硬上限）。
+`sign-release.mjs` 会：
 
-3. 提交并推送：
+- 展开 `package.json` 的 `files[]` 白名单（目录递归，跳过点文件），自动补 `package.json`；
+- 逐文件算 sha256，超过 80 文件或单文件超 4 MiB 直接报错；
+- 用 `scripts/sign-release.mjs` 默认私钥（`~/.dsh/provider-hub/keys/manifest-ed25519-private.pem`，可用 `--key` 或 `$HUB_MANIFEST_KEY` 覆盖）签名；
+- **签名前先走一遍安装端的解析路径**（`parseManifest` → `verifyManifestSignature`），落盘后再回读复验，任一步失败即退出非零。
 
-```bash
-git add -A && git commit -m "release x.y.z" && git push
-```
+⚠️ 签名端和验证端的载荷必须一致：`parseManifest` 会把 `publishedAt` 从 ISO 字符串归一成毫秒数，所以必须**先归一化再签**（脚本里已处理，改脚本时别破坏这一点）。
 
-4. 客户端「检查更新」→ 从 `feed/manifest.json` 取版本，验签通过才装。
+## 数据目录
 
-校验已提交的清单与文件树是否一致：
+`~/.dsh/provider-hub/`：`settings.json`、`stats.json`、`catalog.json`、`availability.json`、`feed.json`、`keys/`。
 
-```bash
-node scripts/sign-release.mjs --check
-```
-
-## 许可证与来源
-
-`LICENSE`（MIT）与 `vendor/channel-pack/NOTICE.md` 原样保留，第三方来源标注不得删除。
-
-## 已知取舍
-
-- 出站内容清洗已内置在 `vendor/channel-pack/pack.js`：规则表 + `sanitizeTencentMessages()`，直连与网关两条路径都接上了，并有启动自检。
-- `client.js` 里保留了若干指向第三方项目的「推荐项目」卡片；与功能无关，可按需删除对应渲染。
+渠道账号与凭据不在这个目录里：账号在 `~/.dsh/channel-pack/state.json`，凭据在 `~/.dsh/.credentials.yaml`。
