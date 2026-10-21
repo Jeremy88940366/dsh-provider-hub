@@ -177,6 +177,7 @@ window.__ModuleLoader__.load({
         'last.hourAgo': '{n} 小时前',
         'last.dayAgo': '{n} 天前',
         'last.input': '输入',
+        'last.code': '原因',
         'last.originChat': '对话',
         'last.originHarness': '桌面',
         'last.originForward': '转发',
@@ -805,6 +806,7 @@ window.__ModuleLoader__.load({
         'last.hourAgo': '{n} h ago',
         'last.dayAgo': '{n} d ago',
         'last.input': 'input',
+        'last.code': 'reason',
         'last.originChat': 'chat',
         'last.originHarness': 'desktop',
         'last.originForward': 'forward',
@@ -3155,7 +3157,9 @@ window.__ModuleLoader__.load({
           `${originOf(lastSample.origin)} · ${t('last.input')} ${kilo(lastSample.input)} · ${t('col.output')} ${kilo(lastSample.output)} tok`
           + (lastSample.ttftMs != null ? ` · ${t('speed.ttft')} ${Math.round(lastSample.ttftMs)} ${t('unit.ms')}` : '')
           + (lastSample.tps != null ? ` · ${t('speed.tps')} ${Math.round(lastSample.tps)} ${t('unit.tokPerSec')}` : '')
-          + (lastSample.ok === false ? ` · ${t('speed.failed')}` : '')),
+          + (lastSample.ok === false
+            ? ` · ${t('speed.failed')}${typeof lastSample.code === 'string' && lastSample.code !== '' ? ` · ${t('last.code')} ${lastSample.code}` : ''}`
+            : '')),
         h('span', { className: 'ofm_note', style: { marginLeft: 'auto' } }, agoOf(lastSample.at)))
 
       const speed = h(Panel, { title: t('speed.title'), hint: recent.length + ' ' + t('speed.calls') },

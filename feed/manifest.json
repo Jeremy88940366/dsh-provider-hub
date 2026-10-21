@@ -1,7 +1,7 @@
 {
-  "version": "3.6.0",
+  "version": "3.6.1",
   "base": "../",
-  "publishedAt": "2026-10-21T17:20:56.626Z",
+  "publishedAt": "2026-10-21T17:33:15.423Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 467163,
-      "sha256": "5cf1650ebe866c9f203ad23a9e308703a842674809486d611f3a765eeb9c9c65"
+      "size": 467363,
+      "sha256": "e856029ed3d9089944dd85e8fcbcee3d82034da4fb7c27b64dcb5acf7945223b"
     },
     {
       "path": "cordis.patch.yml",
@@ -36,8 +36,8 @@
     },
     {
       "path": "index.js",
-      "size": 111284,
-      "sha256": "3d43ecb727662fdc8f8cf5a35e22c902d8e7ed2224266e42bf50cb0886a2f2ac"
+      "size": 111105,
+      "sha256": "fa61eabbc483227d8792fa04b1c524db1b4815d63b2e65ca0d8fd3ca4c188005"
     },
     {
       "path": "locale/en.json",
@@ -52,12 +52,12 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "7c79a04450b8519dcbabec167426ff6aa6eb7286f2ddc7d19f0a2a1c47eb6f8b"
+      "sha256": "9bfc98b81dece262e759ba89afb6760aa7a7416f7a17e4aabdacca012d646124"
     },
     {
       "path": "src/adapter.js",
-      "size": 42803,
-      "sha256": "d6c3bcc912e72f133bd85f77b253ddb5ddcd9fec99fb86d0ce69ef984f4f9192"
+      "size": 43305,
+      "sha256": "92e04468910d592511342a4b1b37f329d519f1334675c3459bbeb2c4e0127723"
     },
     {
       "path": "src/aggregate.js",
@@ -221,8 +221,8 @@
     },
     {
       "path": "src/store.js",
-      "size": 27075,
-      "sha256": "a7f67034f4c5923352554a6b17e0b7adc04f1a61c391631c0ac8067558a579b3"
+      "size": 27633,
+      "sha256": "8c8bd5166620a52a1f4d6f4c4a8c951d3b65b18a2782064d0e12d368125a786d"
     },
     {
       "path": "src/stream.js",
@@ -385,5 +385,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "BWQEbsVCzK7F4njlDT7OzC1HB37ZPiPINdj4H1sO8GPQfOl25u8W110RPboK/BsevsJHS8QzJQLyVflC+XSKAQ=="
+  "signature": "4Cl8lk7YLSHGwrL02Wju195I2K2s+IYdtpmLw2HJMYdYr7J6GqrLF7O4Z/OPCbxxKK3F6G3mCsKg4lfZoUr/Cw=="
 }

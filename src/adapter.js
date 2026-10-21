@@ -559,7 +559,7 @@ export class FreeModelAdapter {
         outcome = collectUsage(outcome)
         usageAdded = true
         if (options.signal?.aborted === true) {
-          record(false, outcome, { aborted: true })
+          record(false, outcome, { aborted: true, code: CODE.aborted })
           finishTurn(false, false, attempt + 1)
           yield { type: 'usage', usage: totalUsage }
           yield { type: 'finish', reason: { kind: 'aborted', failure: { message: 'request aborted', code: CODE.aborted } } }
@@ -588,7 +588,13 @@ export class FreeModelAdapter {
             : recoveryMessages(messages, outcome.reasoningText)
           if (continuationBudget >= MIN_BUDGET
             && checkpointFits(payloadFor(nextMessages, continuationBudget, []), entry, maxTokensCut ? outcome.answerText : outcome.reasoningText, continuationBudget)) {
-            record(false, outcome, { truncated: true, recoveryScheduled: true })
+            record(false, outcome, {
+              truncated: true,
+              recoveryScheduled: true,
+              // Which of the three cuts this was. They all end up truncated,
+              // but only one of them means the provider stopped talking.
+              code: maxTokensCut ? 'MAX_TOKENS_CUT' : silentStop ? 'SILENT_STOP' : 'STREAM_CUT',
+            })
             this.deps.warn?.(maxTokensCut
               ? 'provider-hub: the answer hit the output token ceiling; continuing once from where it stopped'
               : silentStop
@@ -613,14 +619,14 @@ export class FreeModelAdapter {
             : delivered || outcome.sawToolCall === true
               ? `provider hub closed the stream after ${seconds}s, before its finish token; automatic recovery was not safe`
               : 'provider hub closed the stream before its finish token, without answering; retrying'
-          record(false, outcome, { truncated: true })
+          record(false, outcome, { truncated: true, code })
           finishTurn(false, false, attempt + 1)
           yield { type: 'usage', usage: totalUsage }
           yield { type: 'finish', reason: { kind: 'error', failure: { message, code } } }
           return { ok: false, ...advanceVerdict(code, message, undefined) }
         }
         if (outcome.sawText !== true && outcome.sawToolCall !== true && outcome.sawReasoning !== true && reason.kind === 'stop') {
-          record(false, outcome)
+          record(false, outcome, { code: CODE.empty })
           finishTurn(false, false, attempt + 1)
           yield { type: 'usage', usage: totalUsage }
           yield { type: 'finish', reason: { kind: 'error', failure: { message: 'provider hub returned an empty response', code: CODE.empty } } }
@@ -649,7 +655,12 @@ export class FreeModelAdapter {
               : `provider hub continuation failed: ${failure.message}` }
         }
         if (!usageAdded) partialOutcome = collectUsage(partialOutcome)
-        record(false, partialOutcome, { ...(recovering || expired) ? { truncated: true } : {}, ...aborted ? { aborted: true } : {} })
+        record(false, partialOutcome, {
+          ...(recovering || expired) ? { truncated: true } : {},
+          ...aborted ? { aborted: true } : {},
+          code: failure.code,
+          ...Number.isSafeInteger(failure.status) ? { status: failure.status } : {},
+        })
         finishTurn(false, false, attempt + 1)
         for (const chunk of blocks.close()) yield chunk
         if (recovering || partialOutcome?.sawUsage === true) yield { type: 'usage', usage: totalUsage }
@@ -665,7 +676,7 @@ export class FreeModelAdapter {
         options.signal?.removeEventListener('abort', onAbort)
         controller.abort()
         await request
-        if (!recorded) record(false, trustedOutcome(partialOutcome), { aborted: true })
+        if (!recorded) record(false, trustedOutcome(partialOutcome), { aborted: true, code: CODE.aborted })
         if (!continuationScheduled && !turnRecorded) finishTurn(false, false, attempt + 1)
       }
     }

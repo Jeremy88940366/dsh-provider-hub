@@ -422,6 +422,13 @@ export function recordUsage(stats, record, trim = undefined) {
       ...record.recoveryScheduled === true ? { recoveryScheduled: true } : {},
       ...record.recovered === true ? { recovered: true } : {},
       ...record.aborted === true ? { aborted: true } : {},
+      // Why the call failed. The failure counter counted the misses but no row
+      // said what they were: 47 failures in one sitting were indistinguishable
+      // from each other, and every "why does this model keep failing" question
+      // had to be answered by guessing from timestamps. Capped because the code
+      // can come from a provider's own error body.
+      ...typeof record.code === 'string' && record.code !== '' ? { code: record.code.slice(0, 40) } : {},
+      ...Number.isSafeInteger(record.status) ? { status: record.status } : {},
       ...savingsSample(record.savings),
     }].slice(-400)
     const next = {
