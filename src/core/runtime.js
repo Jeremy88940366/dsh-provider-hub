@@ -304,18 +304,33 @@ export function createModelRuntime({
    * The round used to re-ping every probeable model on every cycle, so a model
    * that answered "Rate limit exceeded" was asked again fifteen minutes later —
    * the probe traffic itself kept the free lane's per-model quota pinned at zero.
-   * `available` is cheap to re-confirm and `unknown` is a failure we want to
-   * retry, so both stay on the normal cadence; the other three are verdicts that
-   * cannot flip in minutes, and asking again only spends quota to hear "no".
+   * `unknown` is a failure we want to retry, so it stays on the normal cadence;
+   * the other four are verdicts that cannot flip in minutes, and asking again
+   * only spends quota to hear the same answer.
+   *
+   * `available` is in that group for a reason the first version got wrong: it is
+   * *not* cheap to re-confirm. A probe is a real inference call charged to the
+   * same per-model quota the user needs, so re-pinging a working model fifteen
+   * minutes after it answered "OK" spends the quota that made it work — and a
+   * probe that then trips the limit turns a usable model into an hour-long
+   * `throttled` verdict. Re-confirming a model that already works is the one
+   * probe with a negative payoff.
    */
   const PROBE_TTL_MS = {
+    [STATE.available]: 60 * 60_000,
     [STATE.throttled]: 60 * 60_000,
     [STATE.regionBlocked]: 6 * 60 * 60_000,
     [STATE.unavailable]: 6 * 60 * 60_000,
   }
 
   function probeDue(entry, snapshot, force, only) {
-    if (only !== undefined && !only.includes(entry.id)) return false
+    // An explicit list is an explicit request: the caller already decided this
+    // model is worth a call right now. That is the path a region rejection
+    // schedules for the one model that just failed, and the TTLs must not eat it
+    // — a row that still said `available`, or one already stamped
+    // `region-blocked`, would otherwise silence the reprobe for up to six hours
+    // and leave the real request that triggered it unexplained.
+    if (only !== undefined) return only.includes(entry.id)
     if (force) return true
     const row = snapshot.results?.[entry.id]
     const ttl = PROBE_TTL_MS[row?.state]
