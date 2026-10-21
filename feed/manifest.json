@@ -1,7 +1,7 @@
 {
-  "version": "3.2.1",
+  "version": "3.3.0",
   "base": "../",
-  "publishedAt": "2026-10-21T15:39:38.300Z",
+  "publishedAt": "2026-10-21T15:54:37.455Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 470977,
-      "sha256": "cbca01d327f0a549ac6781985d0729087bc354f76574b16d554589d2dc3ab740"
+      "size": 469961,
+      "sha256": "9480b96f8e81ba1ba79bcaebd0c0ad2acedae00ce6a90f5d9ce35164ac225767"
     },
     {
       "path": "cordis.patch.yml",
@@ -36,8 +36,8 @@
     },
     {
       "path": "index.js",
-      "size": 111970,
-      "sha256": "a42ae870e05f62a327610c60e827fc09e3337c0aa759c9088d7d6fd2a9c192d8"
+      "size": 110295,
+      "sha256": "dfe0a6382f0f3f319d3e399aeae666a5bf4295a3f3fbb6f185b7436ffc6e196e"
     },
     {
       "path": "locale/en.json",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "ef5841964a60c24bf249fd2edc467ac23f5d92a9e627e7de119d35f36d992d84"
+      "sha256": "a116671778963fadfb17ee62ebac6ad102190a8a4f69fe69f8425319e6e67adf"
     },
     {
       "path": "src/adapter.js",
@@ -96,8 +96,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 19136,
-      "sha256": "0f98feafe0aebac2342c773b478028ed85468525e08b5f8784116482dd6f12ef"
+      "size": 22222,
+      "sha256": "0e7682b44f444e077e362a248c19dfe4c9a73921b6f6b417ed94d346461d1a3c"
     },
     {
       "path": "src/core/stats.js",
@@ -138,11 +138,6 @@
       "path": "src/failure.js",
       "size": 2220,
       "sha256": "be94438d50ef94f5938099737725796064f6660cc7e00e9bbb02f618096b2bfd"
-    },
-    {
-      "path": "src/feed.js",
-      "size": 13359,
-      "sha256": "072fc1b8374a594369e349830dc9b0d3a40caa88e28101d3d1a6773de36c2f6f"
     },
     {
       "path": "src/forward.js",
@@ -390,5 +385,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "6Clg9GvANkoWAP+3AcP4OAevOLi1VkFOm4Jp/6v9mnYNy3oRHN/5TNQ9xXG3DFC8jUU3Dys52GrDhg94zv9GCA=="
+  "signature": "CXuVPXXwELwxnwC6zr7jD0vOOjbqwZdrDsvLLTwzMXeY2LVn0dhkI0aLO350xv4S6fSjocG+aMdgH2c4bYgBAw=="
 }

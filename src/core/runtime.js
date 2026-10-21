@@ -133,11 +133,15 @@ export function createModelRuntime({
     },
     recordTurn: record => { if (!disposed) recordTurn(stats, record) },
     warn: message => logger.warn?.(message) ?? logger.log?.(message),
-    onRegionBlocked: () => {
+    onRegionBlocked: id => {
       if (disposed || reprobeTimer !== undefined) return
       reprobeTimer = setTimeout(() => {
         reprobeTimer = undefined
-        if (!disposed) void refreshAvailability(true).catch(error => {
+        // Only the model the user just tried. This used to force a whole round,
+        // which re-pinged every model including the ones already serving
+        // "Rate limit exceeded" — spending the free lane's quota to re-learn
+        // verdicts that were seconds old.
+        if (!disposed) void refreshAvailability(false, typeof id === 'string' ? [id] : undefined).catch(error => {
           logger.warn?.(`provider-hub: region reprobe failed (${error?.message ?? error})`)
         })
       }, 4000)
@@ -261,7 +265,32 @@ export function createModelRuntime({
   let probeRound = null
   let probeThrottleStreak = 0
   let probeBackoffUntil = 0
-  async function runProbeRound() {
+  /**
+   * How long a verdict is trusted before that model is worth another request.
+   *
+   * The round used to re-ping every probeable model on every cycle, so a model
+   * that answered "Rate limit exceeded" was asked again fifteen minutes later —
+   * the probe traffic itself kept the free lane's per-model quota pinned at zero.
+   * `available` is cheap to re-confirm and `unknown` is a failure we want to
+   * retry, so both stay on the normal cadence; the other three are verdicts that
+   * cannot flip in minutes, and asking again only spends quota to hear "no".
+   */
+  const PROBE_TTL_MS = {
+    [STATE.throttled]: 60 * 60_000,
+    [STATE.regionBlocked]: 6 * 60 * 60_000,
+    [STATE.unavailable]: 6 * 60 * 60_000,
+  }
+
+  function probeDue(entry, snapshot, force, only) {
+    if (only !== undefined && !only.includes(entry.id)) return false
+    if (force) return true
+    const row = snapshot.results?.[entry.id]
+    const ttl = PROBE_TTL_MS[row?.state]
+    if (ttl === undefined) return true
+    return !(typeof row.at === 'number' && Date.now() - row.at < ttl)
+  }
+
+  async function runProbeRound(force = false, only = undefined) {
     // The absorbed channels get no per-model probes: their verdicts would be
     // spent against a different gateway than the one that serves them, and a
     // roster the listing named is advertised as-is (its health is the listing
@@ -271,7 +300,15 @@ export function createModelRuntime({
     // (whether a key is configured). A combo is excluded because it has no
     // endpoint of its own: probing one would send the chain's own id to the free
     // lane as a model name, spending quota to collect a verdict about nothing.
-    const probeable = catalog.filter(entry => !isEacEntry(entry) && !isKiloEntry(entry) && !isAggregateEntry(entry) && !isComboEntry(entry))
+    const candidates = catalog.filter(entry => !isEacEntry(entry) && !isKiloEntry(entry) && !isAggregateEntry(entry) && !isComboEntry(entry))
+    const snapshotBefore = availability.get()
+    const probeable = candidates.filter(entry => probeDue(entry, snapshotBefore, force, only))
+    if (probeable.length === 0) {
+      // Nothing is due: every verdict is still inside its trust window. Bumping
+      // `at` here would lie to the settings page about when the last real round
+      // ran, so this returns the snapshot's own timestamp instead.
+      return {}
+    }
     const results = await probeCatalog(probeable, { attributionUserAgent, signal: lifetime.signal }, (id, result) => {
       if (disposed) return
       availability.edit(value => ({
@@ -289,26 +326,50 @@ export function createModelRuntime({
     }, 2)
     if (disposed) return {}
     availability.update({ at: Date.now(), egress })
+    // Rows for models the listing no longer names used to accumulate forever: the
+    // file grew one entry per model that ever appeared, and a verdict for a model
+    // nobody can select is dead weight the settings page still had to ship. Keep
+    // manualTest rows — those are the user's own samples, not a probe verdict.
+    const live = new Set(catalog.map(entry => entry.id))
+    availability.edit(value => {
+      const kept = {}
+      let dropped = 0
+      for (const [id, row] of Object.entries(value.results ?? {})) {
+        if (live.has(id)) kept[id] = row
+        else dropped += 1
+      }
+      if (dropped === 0) return value
+      logger.info?.(`provider-hub: dropped ${dropped} stale availability row(s) for models the listing no longer names`)
+      return { ...value, results: kept }
+    })
     availability.flush()
     const verdicts = Object.values(results)
     if (verdicts.length > 0 && verdicts.every(row => row.state === STATE.unavailable)) {
       logger.warn?.(`provider-hub: the gateway refused all ${verdicts.length} models this round (${verdicts[0].detail ?? 'no detail'}); keeping them advertised`)
     }
-    const allThrottled = verdicts.length > 0 && verdicts.every(row => row.state === STATE.throttled)
-    probeThrottleStreak = allThrottled ? probeThrottleStreak + 1 : 0
-    probeBackoffUntil = allThrottled
-      ? Date.now() + Math.min(30 * 2 ** (probeThrottleStreak - 1), 120) * 60_000
-      : 0
-    if (allThrottled) {
-      logger.warn?.(`provider-hub: the probe round hit the lane's quota; availability probes pause for ${Math.round((probeBackoffUntil - Date.now()) / 60_000)} minutes (your own requests are unaffected, and the reprobe button forces a round)`)
+    // The lane-wide pause is a whole-round verdict. A single-model reprobe (the
+    // one a region rejection schedules) must not park every other model for
+    // half an hour just because that one model happened to answer "throttled".
+    const allThrottled = only === undefined && verdicts.length > 0 && verdicts.every(row => row.state === STATE.throttled)
+    if (only !== undefined) {
+      probeThrottleStreak = 0
+      probeBackoffUntil = 0
+    } else {
+      probeThrottleStreak = allThrottled ? probeThrottleStreak + 1 : 0
+      probeBackoffUntil = allThrottled
+        ? Date.now() + Math.min(30 * 2 ** (probeThrottleStreak - 1), 120) * 60_000
+        : 0
+      if (allThrottled) {
+        logger.warn?.(`provider-hub: the probe round hit the lane's quota; availability probes pause for ${Math.round((probeBackoffUntil - Date.now()) / 60_000)} minutes (your own requests are unaffected, and the reprobe button forces a round)`)
+      }
     }
     emitTopology()
     return results
   }
-  async function refreshAvailability(force = false) {
+  async function refreshAvailability(force = false, only = undefined) {
     if (disposed || (!force && probeBackoffUntil > Date.now())) return {}
     if (probeRound !== null) return probeRound
-    const round = runProbeRound()
+    const round = runProbeRound(force, only)
     probeRound = round
     try { return await round } finally { if (probeRound === round) probeRound = null }
   }

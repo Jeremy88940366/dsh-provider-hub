@@ -6135,14 +6135,12 @@ window.__ModuleLoader__.load({
       // simply shows up as a fresh `hello` a second later.
       ctx.effect(() => {
         if (typeof EventSource !== 'function') return
-        let osEnabled = false
         let disposed = false
         let source
         let retryTimer
         // 重连轮次必须活在 open() 之外：open() 每次重连都会重入，计数器若在里面
         // 会被清零，退避就永远是第一档而不是 30s 翻倍到 5 分钟。
         let retries = 0
-        api('/announcements').then(payload => { osEnabled = payload?.notifyOs === true }).catch(() => {})
         const open = () => {
           if (disposed) return
           source = new EventSource(`${API}/events`)
@@ -6163,25 +6161,6 @@ window.__ModuleLoader__.load({
             }, Math.min(30_000 * 2 ** retries, 300_000))
             retries += 1
           }
-          source.addEventListener('announcements', event => {
-            errCount = 0
-            let data
-            try { data = JSON.parse(event.data) } catch { return }
-            for (const item of data.items ?? []) {
-              osNotify(t('toast.annTitle'), item.title)
-              if (item.level === 'urgent') {
-                showUrgentModal({
-                  title: item.title,
-                  html: item.html ?? '',
-                  confirmLabel: 'OK',
-                  onClose: () => { void post('/announcements/ack', { id: item.id }).catch(() => {}) },
-                })
-              } else {
-                showToast({ title: t('toast.annTitle'), body: item.title, tone: item.level === 'warn' ? 'warn' : undefined })
-              }
-            }
-            window.dispatchEvent(new CustomEvent('ofm:announcements', { detail: data }))
-          })
           source.addEventListener('update', event => {
             let data
             try { data = JSON.parse(event.data) } catch { return }

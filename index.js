@@ -7,9 +7,8 @@
  * forward listener.
  *
  * On top of the model lane the plugin owns a small distribution channel of its
- * own: a remote announcement feed the repository owner publishes by pushing a
- * JSON document, an in-app self-updater that verifies and installs new releases
- * from the same repository, and a self hot-reload that swaps the running plugin
+ * own: an in-app self-updater that verifies and installs new releases from the
+ * repository it is built from, and a self hot-reload that swaps the running plugin
  * for the code now on disk. All three report to the browser over one
  * Server-Sent-Events route, because the kernel has no notification service and
  * the settings page should not have to poll.
@@ -43,7 +42,6 @@ import { createEacLoginPoller } from './src/eac-login.js'
 import { unlockSealedLane } from './src/vault.js'
 import { DEFAULT_LEVEL, budgetLadder, hasDeclaredEffortMenu } from './src/effort.js'
 import { modelAvailability } from './src/model-test.js'
-import { AnnouncementFeed } from './src/feed.js'
 import { PluginUpdater } from './src/updater.js'
 import { selfReload, watchPackage, isReloading } from './src/reload.js'
 import { createPushHub } from './src/push.js'
@@ -111,8 +109,8 @@ export const ANNOUNCEMENT_VERSION = '2026-10-17.3'
 /**
  * Who owns the plugin's bytes — the distribution mode:
  *
- * - `self` (default): the plugin updates itself from its repository, publishes
- *   its announcement feed, and hot-reloads, exactly as before.
+ * - `self` (default): the plugin updates itself from its repository and
+ *   hot-reloads.
  * - `managed`: the plugin arrived through a distribution pack (an EAC
  *   integration pack, a Mojobox install). The pack manager owns the bytes now,
  *   so the in-app updater, the announcement channel and the hot reload stand
@@ -336,30 +334,14 @@ export function apply(ctx, config) {
   // ── push channel ────────────────────────────────────────────────────────────
   const push = createPushHub({ logger })
 
-  /** Set of announcement ids the user has acknowledged. */
-  const ackedIds = () => new Set(Array.isArray(settings.get().announcementsAcked) ? settings.get().announcementsAcked : [])
-
-  const feed = new AnnouncementFeed({
-    settings: () => settings.get(),
-    cacheFile: path.join(dataDir, 'feed.json'),
-    onArrival: items => {
-      push.emit('announcements', { items, unread: feedView().unread })
-      refreshUpdatePush?.()
-    },
-    log: message => logger.info?.(message),
-  })
-  feed.load()
-
-
   /**
-   * The announcement view the settings page reads. A managed install polls no
-   * feed and caches no copy — the pack speaks for the plugin — so its view is a
-   * fixed empty one that names its source honestly.
+   * The settings page reads one announcement: the plugin's own copy, keyed by
+   * ANNOUNCEMENT_VERSION and acked through /announcement. The remote feed that
+   * used to sit beside it was removed with the announcement centre in 3.2.0 —
+   * polling it only produced a 404 every half hour against a repository that
+   * never publishes one.
    */
-  const MANAGED_FEED_VIEW = { items: [], unread: 0, fetchedAt: 0, source: 'managed', error: '', lastError: '' }
-  function feedView() {
-    return managed ? MANAGED_FEED_VIEW : feed.view({ ackedIds: ackedIds() })
-  }
+  const ANNOUNCEMENT_VIEW = { items: [], unread: 0, fetchedAt: 0, source: 'local', error: '', lastError: '' }
 
   const updater = new PluginUpdater({
     pkgDir: PKG_DIR,
@@ -1297,15 +1279,7 @@ export function apply(ctx, config) {
       purgeSample: globalThis[Symbol.for('provider-hub.purge-sample')] ?? undefined,
     }),
     announcements: {
-      view: feedView,
-      /** Persist the complete acked set the caller assembled (full-replace
-       *  semantics: the caller decides additions *and* clearings). */
-      ack: ids => {
-        settings.update({ announcementsAcked: [...ids] })
-        settings.flush()
-        return feedView()
-      },
-      refresh: () => feed.poll(),
+      view: () => ANNOUNCEMENT_VIEW,
     },
     update: {
       status: () => managed
@@ -1368,7 +1342,6 @@ export function apply(ctx, config) {
   function helloPayload() {
     return {
       version: packageVersion,
-      announcements: { unread: feedView().unread, fetchedAt: feedView().fetchedAt },
       update: { available: updater.status().available, latest: updater.status().latest },
       reloadedAt: settings.get().reloadedAt ?? 0,
     }
@@ -1467,11 +1440,15 @@ export function apply(ctx, config) {
     ctx.effect(() => () => clearTimeout(handle), 'provider-hub: interval')
   }
 
+  // The period comes from updateCheckHours — it used to read feedPollMinutes, so
+  // the shipped 6 hours was silently a 30-minute manifest fetch (every 30 min,
+  // 48 round trips a day to answer a question whose answer changes weekly).
   if (!managed) {
     every(() => {
-      const hours = settings.get().updateCheckHours ?? 6
-      if (hours > 0) void updater.check().then(() => pushUpdate(false)).catch(() => {})
-    }, () => positiveOr(settings.get().feedPollMinutes, 30, 5) * 60_000)
+      const hours = Number(settings.get().updateCheckHours ?? 6)
+      if (!Number.isFinite(hours) || hours <= 0) return
+      void updater.check().then(() => pushUpdate(false)).catch(() => {})
+    }, () => positiveOr(Number(settings.get().updateCheckHours ?? 6) * 60, 360, 60) * 60_000)
   }
   // The probe period is in minutes, and one minute is the floor — a value of 0 or
   // a negative one would otherwise spin. This used to read `Math.max(60, …)`,
@@ -1487,7 +1464,18 @@ export function apply(ctx, config) {
   // and only the first of a streak, or a dead link would write every two minutes
   // until the next restart. A success resets the flag for the next outage.
   let egressWarned = false
+  // No outlet configured means nothing to watch: the exit IP can only change on
+  // its own when the operator routes through a relay this plugin owns. Left
+  // unguarded this dialled three public echo services every two minutes forever
+  // (720 outbound requests a day) to re-learn an address that never moved.
+  const egressConfigured = () => {
+    const egress = settings.get().egress ?? {}
+    if (egress.enabled === true) return true
+    // A caller-supplied proxy on the request path also moves the exit IP.
+    return typeof egress.url === 'string' && egress.url.trim() !== '' && egress.enabled !== false
+  }
   every(() => {
+    if (!egressConfigured()) return
     void watchEgress()
       .then(() => {
         egressWarned = false
@@ -1567,7 +1555,6 @@ function sanitizeSettings(patch, current) {
     next[key] = Number.isFinite(value) && value > 0 ? Math.trunc(value) : (Number(current[key]) || fallback)
   }
   positive('probeIntervalMinutes', 15)
-  positive('feedPollMinutes', 30)
   positive('defaultMaxTokens', 32768)
   if (next.updateCheckHours !== undefined) {
     // Zero is a real answer here: it means "stop checking for updates".
@@ -1712,7 +1699,7 @@ export function createApiRoutes(deps) {
         return send(200, deps.clients())
       }
       if (method === 'GET' && routePath === '/meta') {
-        return send(200, { ...deps.meta(), feed: { fetchedAt: deps.announcements.view().fetchedAt, source: deps.announcements.view().source, error: deps.announcements.view().error }, update: deps.update.status() })
+        return send(200, { ...deps.meta(), update: deps.update.status() })
       }
       if (method === 'POST' && routePath === '/eac/login/start') {
         const started = await deps.eacAuth.start()
@@ -1761,27 +1748,9 @@ export function createApiRoutes(deps) {
         deps.settings.flush()
         return send(200, { ok: true })
       }
-      if (method === 'GET' && routePath === '/announcements') {
-        const view = deps.announcements.view()
-        return send(200, { ...view, acked: [...ackedSet(deps)], notifyOs: deps.settings.get().notifyOs === true })
-      }
-      if (method === 'POST' && routePath === '/announcements/ack') {
-        const body = await readJson(req)
-        const acked = ackedSet(deps)
-        if (body.all === true) {
-          // "mark all read": every announcement currently in the feed.
-          for (const item of deps.announcements.view().items) acked.add(item.id)
-        }
-        if (typeof body.id === 'string' && body.id !== '') acked.add(body.id)
-        deps.announcements.ack(acked)
-        return send(200, { ok: true, view: deps.announcements.view() })
-      }
-      if (method === 'POST' && routePath === '/announcements/refresh') {
-        // Managed installs poll no feed; a manual refresh is a polite no-op
-        // rather than a network round the pack never asked for.
-        if (deps.managedDistribution !== true) await deps.announcements.refresh()
-        return send(200, { ok: true, view: deps.announcements.view() })
-      }
+      // /announcements, /announcements/ack and /announcements/refresh went away
+      // with the announcement centre in 3.2.0. The single onboarding notice is
+      // still served by /announcement above.
       if (method === 'GET' && routePath === '/update/status') {
         return send(200, deps.update.status())
       }
@@ -1817,7 +1786,7 @@ export function createApiRoutes(deps) {
         const patch = await readJson(req)
         const visibility = validateModelVisibility(patch)
         const current = deps.settings.get()
-        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens', 'announcementAck', 'feedUrl', 'feedPollMinutes', 'notifyOs', 'updateCheckHours', 'autoReloadWatch']), ...visibility }, current)
+        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens', 'announcementAck', 'updateCheckHours', 'autoReloadWatch']), ...visibility }, current)
         if (patch.forward !== undefined) {
           const forward = { ...(current.forward ?? {}), ...pick(patch.forward, ['enabled', 'host', 'port']) }
           // The listener spends this machine's lane, and a routable bind address
@@ -1946,11 +1915,6 @@ export function createApiRoutes(deps) {
       return send(Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500, { error: String(error?.message ?? error) })
     }
   }
-}
-
-function ackedSet(deps) {
-  const value = deps.settings.get().announcementsAcked
-  return new Set(Array.isArray(value) ? value : [])
 }
 
 function pick(source, keys) {
@@ -2201,9 +2165,6 @@ function publicSettings(settings, forwardInfo, egressInfo) {
     probeIntervalMinutes: settings.probeIntervalMinutes ?? 15,
     defaultMaxTokens: settings.defaultMaxTokens ?? 32768,
     announcementAck: settings.announcementAck ?? '',
-    feedUrl: typeof settings.feedUrl === 'string' ? settings.feedUrl : '',
-    feedPollMinutes: settings.feedPollMinutes ?? 30,
-    notifyOs: settings.notifyOs === true,
     updateCheckHours: settings.updateCheckHours ?? 6,
     autoReloadWatch: settings.autoReloadWatch === true,
     reloadedAt: settings.reloadedAt ?? 0,
@@ -2262,7 +2223,6 @@ function buildSummary(deps) {
   const snapshot = deps.availability.get()
   const forwardInfo = deps.forwardInfo()
   const update = deps.update.status()
-  const feedView = deps.announcements.view()
   const defaultMaxTokens = deps.settings.get().defaultMaxTokens
   // Lanes that carry no availability verdict of their own. The absorbed channels
   // and the aggregate lane are named by a listing round that already succeeded,
@@ -2293,7 +2253,6 @@ function buildSummary(deps) {
     announcementVersion: ANNOUNCEMENT_VERSION,
     version: deps.meta().version,
     distribution: deps.meta().distribution,
-    announcements: { unread: feedView.unread, fetchedAt: feedView.fetchedAt },
     // One bit for the settings page: false with an empty EAC group means the
     // gate never opened (a host the kernel gave no profile context), which is a
     // different sentence from "the relay is down" (issue #60).
