@@ -1454,9 +1454,22 @@ export function apply(ctx, config) {
   // a negative one would otherwise spin. This used to read `Math.max(60, …)`,
   // which floored every interval below an hour *including the shipped default of
   // 15*, so the number on the settings page was silently ignored.
+  // The exit IP only moves when this plugin owns the way out, so an unconfigured
+  // outlet makes the reading a constant. Two periodic paths dialled the echo
+  // services regardless — this one every probe cycle, the one below every two
+  // minutes (720 requests a day). Keep the very first reading (the settings page
+  // needs an address) and skip every repeat afterwards.
+  const egressConfigured = () => {
+    const egress = settings.get().egress ?? {}
+    if (egress.enabled === true) return true
+    // A caller-supplied proxy on the request path also moves the exit IP.
+    return typeof egress.url === 'string' && egress.url.trim() !== '' && egress.enabled !== false
+  }
+  const egressUnknown = () => availability.get().egress === null || availability.get().egress === undefined
+  const worthWatchingEgress = () => egressConfigured() || egressUnknown()
   every(() => {
     void (async () => {
-      await watchEgress()
+      if (worthWatchingEgress()) await watchEgress()
       await refreshCatalog({ probe: true })
     })().catch(error => logger.warn?.(`provider-hub: periodic refresh failed (${error?.message ?? error})`))
   }, () => positiveOr(settings.get().probeIntervalMinutes, 15, 1) * 60_000)
@@ -1464,18 +1477,8 @@ export function apply(ctx, config) {
   // and only the first of a streak, or a dead link would write every two minutes
   // until the next restart. A success resets the flag for the next outage.
   let egressWarned = false
-  // No outlet configured means nothing to watch: the exit IP can only change on
-  // its own when the operator routes through a relay this plugin owns. Left
-  // unguarded this dialled three public echo services every two minutes forever
-  // (720 outbound requests a day) to re-learn an address that never moved.
-  const egressConfigured = () => {
-    const egress = settings.get().egress ?? {}
-    if (egress.enabled === true) return true
-    // A caller-supplied proxy on the request path also moves the exit IP.
-    return typeof egress.url === 'string' && egress.url.trim() !== '' && egress.enabled !== false
-  }
   every(() => {
-    if (!egressConfigured()) return
+    if (!worthWatchingEgress()) return
     void watchEgress()
       .then(() => {
         egressWarned = false
