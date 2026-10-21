@@ -34,7 +34,23 @@ export const STATE = {
   unknown: 'unknown',
 }
 
-const PING_PROMPT = 'ping'
+/**
+ * The prompt a probe spends.
+ *
+ * It must not be `ping`. The free lane answers the exact string `ping` with
+ * `RATE_LIMIT` — "Rate limit exceeded. Please try again later." — regardless of
+ * the model, the session or the account: measured 2026-10-22 on eleven free
+ * models, where the only variable was this string. `Ping`, `ping!`, `pinging`
+ * and `ping\n` all answer normally, so it is a literal entry against health
+ * checks, not a quota. Read as a verdict it marked every free model throttled
+ * for a full hour (`PROBE_TTL_MS`) and the picker emptied itself while real
+ * turns on those same models still worked.
+ *
+ * A sentence is used rather than another one-word shout: it is what a real turn
+ * looks like, so an upstream rule written against "requests no human sends"
+ * has less to match on.
+ */
+const PING_PROMPT = 'Reply with exactly: OK'
 
 /**
  * Ask the gateway for one model, once.
