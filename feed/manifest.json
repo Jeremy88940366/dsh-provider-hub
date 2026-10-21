@@ -1,7 +1,7 @@
 {
-  "version": "3.0.6",
+  "version": "3.0.7",
   "base": "../",
-  "publishedAt": "2026-10-21T15:16:54.628Z",
+  "publishedAt": "2026-10-21T15:18:56.809Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 532513,
-      "sha256": "fa7e92d162b904e7474c001cae3560a5e8f3e2af6aaa7de2666ec06ae655ab9f"
+      "size": 532540,
+      "sha256": "6f75ce912793d25aff0ced92b67ad25413bf8c7a174dde9214f12415e1e32de6"
     },
     {
       "path": "cordis.patch.yml",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2903,
-      "sha256": "a2625449530f0acd3650131f7b0f5451f4848e85b8d84c4841707356a703bccf"
+      "sha256": "fc7f8d5761c56c79dfa643f4f5ada0f90736473773444971bcec9a4d20a42f16"
     },
     {
       "path": "src/adapter.js",
@@ -76,8 +76,8 @@
     },
     {
       "path": "src/chan-relay.js",
-      "size": 8012,
-      "sha256": "68df6d18381bae71207763b45646bee92c8a824e20eb5ad4a02b5aed7fa03ad3"
+      "size": 8021,
+      "sha256": "f4cc28b074ee4c6dd1caed9bae2d81e64e2a2908d963f2f7f4697881e65575a4"
     },
     {
       "path": "src/channel.js",
@@ -236,8 +236,8 @@
     },
     {
       "path": "src/sponsor.js",
-      "size": 14680,
-      "sha256": "57037468b5ecfeff7bbeb9d802f0193d31ab8ba7b80582915bc4d7c4fa8d0266"
+      "size": 14716,
+      "sha256": "39a9191e7f87025e19bf7eb1c578bbffd42f1ea582af5535816ca708bf4ac3ac"
     },
     {
       "path": "src/store.js",
@@ -391,8 +391,8 @@
     },
     {
       "path": "vendor/channel-pack/NOTICE.md",
-      "size": 3530,
-      "sha256": "380cbd891e788e3c3e5f9af338a020772f4c88f5397351fa317ceade244d5dfa"
+      "size": 3566,
+      "sha256": "778d2dbe879c84e97c65c19844ec646e00497ebeb8c1a4a70f1e4fa870dbc7d8"
     },
     {
       "path": "vendor/channel-pack/pack.js",
@@ -405,5 +405,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "Q0XJCs8mu6eL/bbqGmWu5ahAuQ3PeDKrlFS4wVitlLUSJP1Yk3CdaGIruz0xY4f/op/qQYAIFKuNK7YxB8LNCA=="
+  "signature": "zPtqfRbopYITY4MIqcRfbjcpRsKmPTQ6Lm9ntf5W7d/P0vcNBTMNWILPqbLimp2S8uBMQa2kRJO1JDYR6mPxDA=="
 }
