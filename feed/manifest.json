@@ -1,7 +1,7 @@
 {
-  "version": "3.4.0",
+  "version": "3.5.0",
   "base": "../",
-  "publishedAt": "2026-10-21T16:39:47.721Z",
+  "publishedAt": "2026-10-21T16:55:31.158Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 467006,
-      "sha256": "07410a700624db3b737078f5d5c99b62a37cb4d570ea9ba47274f5c2201b8cd4"
+      "size": 467163,
+      "sha256": "5cf1650ebe866c9f203ad23a9e308703a842674809486d611f3a765eeb9c9c65"
     },
     {
       "path": "cordis.patch.yml",
@@ -36,8 +36,8 @@
     },
     {
       "path": "index.js",
-      "size": 110572,
-      "sha256": "95383be9507f9e7601431c5759b99d7abc80769dac93bc3e8e820127e691c577"
+      "size": 111284,
+      "sha256": "3d43ecb727662fdc8f8cf5a35e22c902d8e7ed2224266e42bf50cb0886a2f2ac"
     },
     {
       "path": "locale/en.json",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 2949,
-      "sha256": "53781c8334bbd76b4264f517239727eab67baf1d6bba018d9d364a76eeb5c1bf"
+      "sha256": "f6ad4c345382557b975207bb64e10cee2c67c0c03ae1d483eb5cf79f8da91cf2"
     },
     {
       "path": "src/adapter.js",
@@ -96,8 +96,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 22436,
-      "sha256": "2e4bba8b1f1e18bf02bba1065edcab9e7fc59fdcf957d0f9aface6c8ed40d726"
+      "size": 23652,
+      "sha256": "8905060f1f2162977b4c302ed650b38cbb1bfd3fd87ee502317d1e96f0e3e668"
     },
     {
       "path": "src/core/stats.js",
@@ -221,8 +221,8 @@
     },
     {
       "path": "src/store.js",
-      "size": 25239,
-      "sha256": "06a6eebbc752521e07980228a19a7689a70bd7b64fdd835aeb2c2e3e245e4bc7"
+      "size": 27075,
+      "sha256": "a7f67034f4c5923352554a6b17e0b7adc04f1a61c391631c0ac8067558a579b3"
     },
     {
       "path": "src/stream.js",
@@ -385,5 +385,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "MVOBbLBbrqrp7wSPeg9vIs/1ebco7ddw2j13vVvLVpGI7wNC+Qh7/cVXFS/76fS3FAQVqGRccwxQxga0cRRwBQ=="
+  "signature": "8qanMhy5ZNgWGBmwtiqUL8IrkPOVIWDCYwA7Qc4RJN+xS8m8oXnVC7lAur9iZFk6GOP7YszcJ/5/IG50ZbfCCg=="
 }

@@ -4,7 +4,7 @@ import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildEacCatalog, buildKiloCatalog, isEacEntry, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
 import { buildAggregateCatalog, isAggregateEntry } from '../aggregate.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from '../combos.js'
-import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateSettings, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
+import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateSettings, migrateStats, recordTurn, recordUsage, trimStats, isModelHidden } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
 import { CODE, UpstreamError, getJson } from '../http.js'
 import { runModelTest, modelAvailability } from '../model-test.js'
@@ -125,16 +125,40 @@ export function createModelRuntime({
     attributionUserAgent,
   })
   const emitTopology = () => { if (!disposed) onTopology() }
+  // One trim pass shared by both writers.
+  //
+  // It prunes against the lanes the catalog store *knows about*, not against the
+  // in-memory catalog: `sealedCatalog` empties the moment EAC is signed out and
+  // `kiloCatalog` empties until the first Kilo listing lands, and either would
+  // otherwise take every lifetime row those models earned with it. Only a model
+  // that left the upstream roster — a retired free lane, a deleted combo — is
+  // actually gone, and only that one should lose its history.
+  const trim = value => trimStats(value, {
+    keepDays: 120,
+    liveIds: knownModelIds(),
+  })
+  function knownModelIds() {
+    const stored = catalogStore.get()
+    const ids = new Set(Array.isArray(stored.entries) ? stored.entries : [])
+    for (const id of Array.isArray(stored.sealIds) ? stored.sealIds : []) ids.add(id)
+    for (const row of Array.isArray(stored.kiloRows) ? stored.kiloRows : []) {
+      if (row !== null && typeof row === 'object' && typeof row.id === 'string') ids.add(row.id)
+    }
+    for (const entry of catalog) ids.add(entry.id)
+    for (const combo of normalizeCombos(settings.get().combos)) {
+      for (const id of Array.isArray(combo.models) ? combo.models : []) ids.add(id)
+    }
+    return ids
+  }
   const adapter = new FreeModelAdapter({
     state,
     resolveImage,
     sealedCredential,
     recordUsage: record => {
       if (disposed) return
-      recordUsage(stats, record)
-      stats.edit(value => pruneDays(value, 120))
+      recordUsage(stats, record, trim)
     },
-    recordTurn: record => { if (!disposed) recordTurn(stats, record) },
+    recordTurn: record => { if (!disposed) recordTurn(stats, record, trim) },
     warn: message => logger.warn?.(message) ?? logger.log?.(message),
     onRegionBlocked: id => {
       if (disposed || reprobeTimer !== undefined) return

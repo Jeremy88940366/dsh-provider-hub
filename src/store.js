@@ -362,7 +362,7 @@ export function decodeWindow(decodeMs, tokens, ok) {
  * Accumulate one completed call into the store's day/model buckets and keep a
  * bounded ring of per-call latency samples for the speed charts.
  */
-export function recordUsage(stats, record) {
+export function recordUsage(stats, record, trim = undefined) {
   return stats.edit(state => {
     const day = dayKey(record.at)
     const days = { ...(state.days ?? {}) }
@@ -424,7 +424,7 @@ export function recordUsage(stats, record) {
       ...record.aborted === true ? { aborted: true } : {},
       ...savingsSample(record.savings),
     }].slice(-400)
-    return {
+    const next = {
       ...state,
       days,
       models,
@@ -433,6 +433,10 @@ export function recordUsage(stats, record) {
       samples,
       savings: accumulateSavings(state.savings, record.savings),
     }
+    // Trimming used to be a second `stats.edit` call, and `edit` deep-clones the
+    // whole document (~80 KiB) before running the mutator. Folding it into this
+    // pass removes that clone from the hottest write path in the plugin.
+    return trim === undefined ? next : trim(next)
   })
 }
 
@@ -470,7 +474,7 @@ function savingsSample(savings) {
 }
 
 /** Record one user-visible turn, separately from its physical upstream attempts. */
-export function recordTurn(stats, record) {
+export function recordTurn(stats, record, trim = undefined) {
   return stats.edit(state => {
     const previous = state.logical ?? {}
     const models = { ...(previous.models ?? {}) }
@@ -482,7 +486,7 @@ export function recordTurn(stats, record) {
       failed: row.failed + failed,
       recovered: row.recovered + recovered,
     }
-    return {
+    const next = {
       ...state,
       logical: {
         ...previous,
@@ -492,6 +496,7 @@ export function recordTurn(stats, record) {
         models,
       },
     }
+    return trim === undefined ? next : trim(next)
   })
 }
 
@@ -564,6 +569,41 @@ export function migrateStats(value) {
     },
     samples,
   }
+}
+
+/**
+ * One pass that trims everything that grows without bound.
+ *
+ * `pruneDays` alone only ever shrank `days`, so a model that left the catalog —
+ * a free lane retired upstream, a combo the user deleted — kept its lifetime row
+ * in `models` and `logical.models` forever, and the stats page kept drawing it.
+ * `liveIds` is the current catalog's id set; `null` skips that half.
+ *
+ * Returns `state` unchanged (same reference) when there is nothing to drop, so
+ * callers that hold a snapshot do not see a spurious new object.
+ */
+export function trimStats(state, { keepDays = 120, liveIds = null } = {}) {
+  let next = pruneDays(state, keepDays)
+  if (liveIds === null || liveIds === undefined) return next
+  const keep = value => value === undefined || liveIds.has(value)
+  const models = next.models ?? {}
+  const modelKeys = Object.keys(models)
+  if (modelKeys.some(key => !keep(key))) {
+    const pruned = {}
+    for (const key of modelKeys) if (keep(key)) pruned[key] = models[key]
+    next = { ...next, models: pruned }
+  }
+  const logical = next.logical
+  const logicalModels = logical?.models
+  if (logicalModels !== undefined && logicalModels !== null) {
+    const keys = Object.keys(logicalModels)
+    if (keys.some(key => !keep(key))) {
+      const pruned = {}
+      for (const key of keys) if (keep(key)) pruned[key] = logicalModels[key]
+      next = { ...next, logical: { ...logical, models: pruned } }
+    }
+  }
+  return next
 }
 
 /** Trim day buckets older than `keepDays`, keeping the payload chart-sized. */

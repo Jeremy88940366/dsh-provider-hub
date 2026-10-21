@@ -1999,9 +1999,24 @@ function publicAggregate(section) {
   return { enabled: section?.enabled !== false, providers: out }
 }
 
-/** The provider registry, compact enough for one settings page to hold. */
+/**
+ * The provider registry, compact enough for one settings page to hold.
+ *
+ * Built once. `registry.json` is static and `PROVIDERS` is deep-frozen, yet this
+ * used to re-map 75 providers / 500 models into fresh objects on every `/meta`
+ * call and every SSE hello frame: ~80 KiB of garbage per request, for data that
+ * cannot change between requests.
+ */
+let providerRegistryCache = null
+/** The cache is handed to every caller, so it must not be mutable in place. */
+function freezeDeep(value) {
+  if (value === null || typeof value !== 'object') return value
+  for (const child of Object.values(value)) freezeDeep(child)
+  return Object.freeze(value)
+}
 function publicProviderRegistry() {
-  return listProviders().map(provider => ({
+  if (providerRegistryCache !== null) return providerRegistryCache
+  providerRegistryCache = freezeDeep(listProviders().map(provider => ({
     id: provider.id,
     name: provider.name,
     category: provider.category,
@@ -2021,7 +2036,8 @@ function publicProviderRegistry() {
       vision: model.vision === true,
       reasoning: model.reasoning === true,
     })),
-  }))
+  })))
+  return providerRegistryCache
 }
 
 /** The five local answers, in evaluation order. */

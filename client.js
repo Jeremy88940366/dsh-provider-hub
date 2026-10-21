@@ -3718,7 +3718,9 @@ window.__ModuleLoader__.load({
           setTransport(previous => sameChannelTransport(previous, next) ? previous : next)
         }
         check()
-        const timer = setInterval(check, 500)
+        // Transport replacement happens on plugin reload, never within half a
+        // second. 500 ms bought nothing but a getter call plus a try/catch.
+        const timer = setInterval(check, 2000)
         return () => { alive = false; clearInterval(timer) }
       }, [readTransport])
       // Context wrappers do not invalidate readers; actual transport replacement does.
