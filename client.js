@@ -27,7 +27,7 @@ window.__ModuleLoader__.load({
     const ReactDOM = require('react-dom')
     const { createElement: h, Fragment, useState, useEffect, useMemo, useRef, useCallback } = React
 
-    const NS = 'settings.ourFreeModel'
+    const NS = 'settings.providerHub'
     const inject = ['slots', 'locale']
     const SPONSOR_CARD_URL = 'https://beichenapi.com/register?aff=DL49WAC2DQNG'
     // Sponsor artwork, scaled proportionally for the existing 56px tile.
