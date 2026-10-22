@@ -19,6 +19,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import { connect } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -162,77 +163,128 @@ if (dryRun) {
   process.exit(0)
 }
 
-// 推送失败最常见的原因是连不上 github.com —— 本机到 github.com:443 时通时不通，
-// 而 api.github.com 一直正常，所以「网页能开」不代表能推。git 只会甩一句
-// "Could not connect to server"，分不清是网络还是凭据，所以这里分开报。
-//
 // 两条路：origin 走 HTTPS（需要代理），ssh 远端走 ssh.github.com:443（TCP 稳定，
-// 且不依赖 http.proxy —— 它自己经 SSH 隧道出去）。HTTPS 失败时自动换 ssh 再试一次。
-step(`推送 origin/${branch}`)
+// 且不依赖 http.proxy —— SSH 自己出网）。
+//
+// 为什么要先探代理：本机到 github.com:443 时通时不通，HTTPS 推送能不能成，
+// 完全取决于代理是否开着。代理关着时 git 会先花 ~20 秒超时再失败，然后我们才
+// 切 ssh —— 白等。所以先花 ~400ms 探一下代理端口，死了就直接走 ssh。
+const proxyUrl = (() => {
+  try {
+    return execFileSync('git', ['config', '--get', 'http.proxy'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch { return '' }
+})()
+
+const proxyTarget = (() => {
+  if (proxyUrl === '') return null
+  try {
+    const parsed = new URL(proxyUrl)
+    return [parsed.hostname, Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80)]
+  } catch { return null }
+})()
+
+// net.connect 是异步的，而脚本其余部分是同步的。用 Atomics.wait 阻塞等结果：
+// 端口通不通在 400ms 内必有结论，比让 git 自己超时 20 秒快得多。
+const probePort = ([host, port], timeout = 400) => {
+  if (!host || !port) return false
+  const gate = new Int32Array(new SharedArrayBuffer(4))
+  const release = () => { Atomics.store(gate, 0, 1); Atomics.notify(gate, 0) }
+  let ok = false
+  const socket = connect({ host, port })
+  socket.setTimeout(timeout)
+  socket.once('connect', () => { ok = true; socket.destroy(); release() })
+  socket.once('timeout', () => { socket.destroy(); release() })
+  socket.once('error', () => { socket.destroy(); release() })
+  Atomics.wait(gate, 0, 0, timeout + 200)
+  return ok
+}
+
+const hasSshRemote = git('remote').split('\n').includes('ssh')
+const pushVia = remote => {
+  execFileSync('git', ['push', remote, branch], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+}
+const failureText = error => [String(error.stdout ?? ''), String(error.stderr ?? '')].join('\n').trim()
+
+// 推成功后把 origin/* 跟踪引用对齐。ssh 远端配了 remote.ssh.fetch 指向
+// refs/remotes/origin/*，跑一次 fetch 就同步；失败也不影响已完成的推送。
+const syncTrackingRefs = () => {
+  try {
+    execFileSync('git', ['fetch', '--quiet', hasSshRemote ? 'ssh' : 'origin'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch { /* 引用滞后只影响下次的 ahead 计数，不影响正确性 */ }
+}
+
+const pushViaSsh = () => {
+  console.log('  走 ssh 远端（ssh.github.com:443，不依赖代理）')
+  try {
+    pushVia('ssh')
+  } catch (sshError) {
+    const sshDetail = failureText(sshError)
+    if (sshDetail) console.error(sshDetail)
+    if (/Permission denied \(publickey\)/.test(sshDetail)) {
+      console.error('\n✗ ssh 远端没有登记公钥。把下面这把公钥加到 GitHub（Settings → SSH keys）：')
+      console.error(`  ${path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.ssh', 'id_ed25519_provider_hub.pub')}`)
+      console.error('  https://github.com/settings/ssh/new')
+    }
+    console.error('\n提交已经存在本地，通路恢复后直接 git push 即可，不用重跑本脚本。')
+    process.exit(1)
+  }
+  syncTrackingRefs()
+  console.log(`  → 推送了 ${ahead} 个提交（ssh over 443）`)
+}
+
+// ahead 用本地 HEAD 与 origin 跟踪引用比。代理关着时 origin/main 可能是旧的，
+// 数字偏大不影响「要不要推」的判断（非 0 就推）。
 const ahead = Number(git('rev-list', '--count', `origin/${branch}..HEAD`))
+step(`推送 origin/${branch}`)
 if (ahead === 0) {
   console.log('  已经在远端，无需推送')
   process.exit(0)
 }
 
-const hasSshRemote = git('remote').split('\n').includes('ssh')
-const pushVia = (remote, extra = []) => {
-  execFileSync('git', ['push', ...extra, remote, branch], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
-}
-const failureText = error => [String(error.stdout ?? ''), String(error.stderr ?? '')].join('\n').trim()
+const proxyUp = proxyTarget === null ? true : probePort(proxyTarget)
 
-try {
-  pushVia('origin')
-  console.log(`  → 推送了 ${ahead} 个提交（https）`)
-} catch (error) {
-  const detail = failureText(error)
-  const networkDown = /Could not connect to server|unable to access|Connection (timed out|refused)|Failed to connect/i.test(detail)
+if (proxyTarget !== null && !proxyUp) {
+  console.log(`  代理 ${proxyUrl} 连不上，跳过 HTTPS`)
+  if (hasSshRemote) {
+    pushViaSsh()
+  } else {
+    console.error('\n✗ 代理没开，也没有配 ssh 远端 —— 提交已经在本地。')
+    console.error('  要么开代理，要么加一条 ssh 备选通路：')
+    console.error('    git remote add ssh git@github.com:<owner>/<repo>.git')
+    process.exit(1)
+  }
+} else {
+  try {
+    pushVia('origin')
+    console.log(`  → 推送了 ${ahead} 个提交（https）`)
+  } catch (error) {
+    const detail = failureText(error)
+    const networkDown = /Could not connect to server|unable to access|Connection (timed out|refused)|Failed to connect/i.test(detail)
 
-  if (networkDown && hasSshRemote) {
-    console.log('  HTTPS 不通，改用 ssh 远端（ssh.github.com:443）重试')
-    try {
-      pushVia('ssh')
-      console.log(`  → 推送了 ${ahead} 个提交（ssh over 443）`)
-      step('完成')
-      console.log(`  ${version} 已推送（经 ssh 远端）`)
-      console.log('  提醒：origin 仍是 HTTPS，fetch 仍走代理；本次只是推送换了通路。')
-      process.exit(0)
-    } catch (sshError) {
-      const sshDetail = failureText(sshError)
-      if (sshDetail) console.error(sshDetail)
-      if (/Permission denied \(publickey\)/.test(sshDetail)) {
-        console.error('\n✗ ssh 远端没有登记公钥。把下面这把公钥加到 GitHub（Settings → SSH keys）：')
-        console.error(`  ${path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.ssh', 'id_ed25519_provider_hub.pub')}`)
-        console.error('  https://github.com/settings/ssh/new')
+    if (networkDown && hasSshRemote) {
+      console.log('  HTTPS 不通，改用 ssh 远端重试')
+      pushViaSsh()
+    } else {
+      if (detail) console.error(detail)
+      if (networkDown) {
+        console.error('\n✗ 连不上 github.com —— 提交已经存在本地，网络恢复后直接 git push 即可，不用重跑本脚本。')
+        if (proxyTarget === null) {
+          console.error('  当前没有配代理。本机到 github.com:443 时通时不通：')
+          console.error('    git config http.proxy http://127.0.0.1:7890')
+        } else {
+          console.error(`  当前代理 ${proxyUrl}，确认它开着：curl -x ${proxyUrl} -I https://github.com`)
+        }
+        if (!hasSshRemote) console.error('  也可以加一条 ssh 备选通路：git remote add ssh git@github.com:<owner>/<repo>.git')
+      } else if (/Authentication failed|could not read Username|403/i.test(detail)) {
+        console.error('\n✗ 凭据被拒。token 可能过期了，重填：')
+        console.error("  printf 'protocol=https\\nhost=github.com\\nusername=Jeremy88940366\\npassword=<token>\\n\\n' | git credential approve")
       }
-      console.error('\n提交已经存在本地，通路恢复后直接 git push 即可，不用重跑本脚本。')
       process.exit(1)
     }
   }
-
-  if (detail) console.error(detail)
-  const proxy = (() => {
-    try {
-      return execFileSync('git', ['config', '--get', 'http.proxy'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-    } catch { return '' }
-  })()
-  if (networkDown) {
-    console.error('\n✗ 连不上 github.com —— 提交已经存在本地，网络恢复后直接 git push 即可，不用重跑本脚本。')
-    if (proxy === '') {
-      console.error('  当前没有配代理。本机到 github.com:443 时通时不通，配一个再试：')
-      console.error('    git config http.proxy http://127.0.0.1:7890')
-    } else {
-      console.error(`  当前代理 ${proxy}，确认它开着：curl -x ${proxy} -I https://github.com`)
-    }
-    if (!hasSshRemote) console.error('  也可以加一条 ssh 备选通路：git remote add ssh git@github.com:<owner>/<repo>.git')
-  } else if (/Authentication failed|could not read Username|403/i.test(detail)) {
-    console.error('\n✗ 凭据被拒。token 可能过期了，重填：')
-    console.error("  printf 'protocol=https\\nhost=github.com\\nusername=Jeremy88940366\\npassword=<token>\\n\\n' | git credential approve")
-  }
-  process.exit(1)
 }
 
 step('完成')
-console.log(`  ${version} 已推送到 ${git('remote', 'get-url', 'origin')}`)
+console.log(`  ${version} 已推送 origin/${branch}`)
 console.log('  提醒：本机 profile 里的副本是 file: 依赖的拷贝，不是软链；')
 console.log('        改了源文件要 cp 到 profiles/desktop/node_modules/dsh-provider-hub/ 再刷新页面。')
