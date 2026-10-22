@@ -1,7 +1,7 @@
 {
-  "version": "3.7.14",
+  "version": "3.7.15",
   "base": "../",
-  "publishedAt": "2026-10-22T18:24:26.429Z",
+  "publishedAt": "2026-10-22T18:25:08.945Z",
   "notes": "",
   "files": [
     {
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 3299,
-      "sha256": "8fc66c60fb274190cf7590ece930e36b9a7df567b3f0f46d7a4ac44a7e54461a"
+      "sha256": "fac07e5aa9f055510e80dcf148289aeec6a60a1b804be2ab91c5f65fd58fd0ba"
     },
     {
       "path": "src/adapter.js",
@@ -395,5 +395,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "Hlw2v4HVB38rxtpUYeGWT63oH9xZqdyyfhF+d1HgPuvC78UGW7b+wGYH86XI5H490d7jqRA2/4tVlU/P2w7GDg=="
+  "signature": "Ft7bh9LxawMLL8lD/zJWVoxxKdnP8iNLzl2JFjaUN98xH7iTjtn8w1Ihk6CioWnc+FujqSaJe8FtE0S7IqY5Dw=="
 }
