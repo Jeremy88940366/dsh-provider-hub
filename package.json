@@ -1,6 +1,6 @@
 {
   "name": "dsh-provider-hub",
-  "version": "3.7.12",
+  "version": "3.7.13",
   "private": true,
   "type": "module",
   "description": "DSH 插件：本地模型渠道聚合与转发（个人维护分支）。提供匿名免费车道、账号渠道登录与账号池、积分领取、本地 OpenAI 网关、局域网转发、数据看板与运行日志。",
@@ -33,7 +33,10 @@
     "sync": "node scripts/sync-upstream.mjs",
     "test:ui": "node scripts/plugin-ui-test.mjs",
     "ship": "node scripts/ship.mjs",
-    "sign:check": "node scripts/sign-release.mjs --check"
+    "sign:check": "node scripts/sign-release.mjs --check",
+    "upstream:check": "node scripts/check-upstream.mjs",
+    "upstream:json": "node scripts/check-upstream.mjs --json",
+    "test:upstream": "node scripts/upstream-track-test.mjs"
   },
   "files": [
     "index.js",
@@ -47,7 +50,8 @@
     "locale",
     "icon.svg",
     "cordis.patch.yml",
-    "LICENSE"
+    "LICENSE",
+    "sync-base.json"
   ],
   "keywords": [
     "dsh",

@@ -6,3 +6,4 @@ feed/manifest.json.bak
 Thumbs.db
 # 一次性诊断脚本：点开头 + .mjs，绝不进仓库
 .*.mjs
+.upstream-check.json

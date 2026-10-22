@@ -1,7 +1,7 @@
 {
-  "version": "3.7.12",
+  "version": "3.7.13",
   "base": "../",
-  "publishedAt": "2026-10-22T18:01:27.380Z",
+  "publishedAt": "2026-10-22T18:13:42.568Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 473067,
-      "sha256": "80ab89fa0756a07702636aba8aaa7b250d3f748373fad85d4785f60baeb12909"
+      "size": 481975,
+      "sha256": "dcb645ac20bbef0e2c667c251c5dc9c743ab4a42cc1aa985428aa990e4ea901c"
     },
     {
       "path": "cordis.patch.yml",
@@ -36,8 +36,8 @@
     },
     {
       "path": "index.js",
-      "size": 111105,
-      "sha256": "fa61eabbc483227d8792fa04b1c524db1b4815d63b2e65ca0d8fd3ca4c188005"
+      "size": 113772,
+      "sha256": "cddc9ba682d5a09e7efb450c7e3d2f7ecf24463284f26d75361e58414c6e23f4"
     },
     {
       "path": "locale/en.json",
@@ -51,8 +51,8 @@
     },
     {
       "path": "package.json",
-      "size": 3096,
-      "sha256": "c58de1030e1046d536ae6358e9b41c94eb2b792fff7dde4a3ae3013c74dcdb77"
+      "size": 3299,
+      "sha256": "826654c55700cb1c9f656c0d295facaff20d5e435c7c81e681a0c38467b5d028"
     },
     {
       "path": "src/adapter.js",
@@ -345,6 +345,11 @@
       "sha256": "c388272574916a3a015b29a5dd5b60aa3b7dfdc74ecf09da35bbefd0903465d2"
     },
     {
+      "path": "src/upstream-track.js",
+      "size": 9904,
+      "sha256": "bcd8fb823bd07e99d54b75580abd4e7f43bf43822fcb36fa3cc201f21d9fa8f7"
+    },
+    {
       "path": "src/upstream.js",
       "size": 28946,
       "sha256": "7b983a32efbafe7f43ccc5ada65d7967d143f45513e9a517ef7dcafe592446df"
@@ -363,6 +368,11 @@
       "path": "src/vault.js",
       "size": 9969,
       "sha256": "9ee2cd231f9642883485787832ea82c6411c062ba276e70cc770cff3a464f186"
+    },
+    {
+      "path": "sync-base.json",
+      "size": 63,
+      "sha256": "30772dd34e2517e3e6e73386855ff9bcedf8d656fc40dcce08502afd07e077f4"
     },
     {
       "path": "vendor/channel-pack/LICENSE",
@@ -385,5 +395,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "h4jH96uBAkyikKd0hBgpXYTogAirqjg34Q/+wVmR7qFXgagonzHCHrLu1OAGqthwJ8xzsJf7OXRRweobVuS3CQ=="
+  "signature": "Yqg8e+3hgMfev+sHimc+9Mj2DNaaGD9ZU6fmicECGctMwKaryPGzDuGXImMBzHTRplWsUzRdxlyKUfnOdZw7DA=="
 }

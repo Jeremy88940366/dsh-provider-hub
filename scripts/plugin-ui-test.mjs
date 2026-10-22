@@ -23,10 +23,11 @@ class Node {
   get firstElementChild() { return this.children[0] }
 }
 
-function boot({ storage = new Map(), observe = false, hidden = false } = {}) {
+function boot({ storage = new Map(), observe = false, hidden = false, fetch: fetchImpl } = {}) {
   let bundle, cursor = 0, tree, dirty = true
   const cells = [], observers = [], listeners = new Map()
   const cleanups = []
+  const requests = []
   const html = new Node('html'), head = html.appendChild(new Node('head')), body = html.appendChild(new Node('body'))
 
   const document = {
@@ -86,8 +87,27 @@ function boot({ storage = new Map(), observe = false, hidden = false } = {}) {
         cell.needsCleanup = typeof cell.cleanup === 'function'
       }
     },
-    useMemo: (fn) => fn(),
-    useCallback: fn => fn,
+    // useCallback/useMemo must honour their dependency array: a fresh function
+    // identity every render makes any `useEffect(..., [callback])` re-run
+    // forever, which the fixpoint loop below would spin on.
+    useMemo: (fn, deps) => {
+      const index = cursor++
+      const cell = cells[index] ?? (cells[index] = { kind: 'memo' })
+      if (cell.deps === undefined || !depsEqual(cell.deps, deps)) {
+        cell.deps = deps === undefined ? undefined : [...deps]
+        cell.value = fn()
+      }
+      return cell.value
+    },
+    useCallback: (fn, deps) => {
+      const index = cursor++
+      const cell = cells[index] ?? (cells[index] = { kind: 'callback' })
+      if (cell.deps === undefined || !depsEqual(cell.deps, deps)) {
+        cell.deps = deps === undefined ? undefined : [...deps]
+        cell.value = fn
+      }
+      return cell.value
+    },
     useRef: initial => {
       const index = cursor++
       if (cells[index] === undefined) cells[index] = { current: initial }
@@ -107,7 +127,19 @@ function boot({ storage = new Map(), observe = false, hidden = false } = {}) {
     clearTimeout() {},
     setInterval: () => 1, clearInterval() {},
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    fetch: (url, options) => {
+      requests.push({ url: String(url), options })
+      // The panel talks to the host over the plugin's own api() helper, which
+      // wants a Response-shaped object (ok/status/text/headers). Answer from the
+      // caller-supplied table so each test can stage a payload or a failure.
+      const answer = fetchImpl === undefined ? {} : fetchImpl(String(url), options)
+      return Promise.resolve({
+        ok: answer.ok !== false,
+        status: answer.status ?? 200,
+        headers: { get: name => answer.headers?.[String(name).toLowerCase()] ?? null },
+        text: () => Promise.resolve(answer.body === undefined ? '{}' : JSON.stringify(answer.body)),
+      })
+    },
   }, { filename: 'client.js' })
 
   const module = { exports: {} }
@@ -146,7 +178,12 @@ function boot({ storage = new Map(), observe = false, hidden = false } = {}) {
     return tree
   }
 
-  return { api, test: api.__test, draw, document, window, observers, listeners, storage, cleanups }
+  return { api, test: api.__test, draw, document, window, observers, listeners, storage, cleanups, requests }
+}
+
+/** Let every pending promise (the panel's api() round trip) land, then redraw. */
+const settle = async () => {
+  for (let pass = 0; pass < 8; pass += 1) await Promise.resolve()
 }
 
 let checks = 0
@@ -262,6 +299,122 @@ await check('the effects-off CSS keeps the aquarium animating', () => {
   assert.match(css, /\.ofm_tank\[data-ofm-motion="off"\] \*\{animation-play-state:paused/, 'tank pause rule')
   assert.match(css, /\.ofm_root\[data-ofm-active="false"\] \*/, 'page sleep rule')
   assert.doesNotMatch(css, /ofm_navspacer/, 'dead spacer rule removed')
+})
+
+// ── upstream OFM tracker panel ──────────────────────────────────────────────
+// The panel's whole value is telling "the upstream moved" apart from "the check
+// failed". Those two states look identical if the error path ever clears the
+// last good result, and nobody would notice until they acted on stale versions.
+
+const upstreamStatus = (over = {}) => ({
+  repo: 'Ebony-Vinyl/dsh-our-free-model',
+  baseline: 'v2.5.8',
+  checking: false,
+  lastAttempt: 1,
+  lastError: '',
+  latestTag: 'v2.5.9',
+  behind: ['v2.5.9'],
+  updated: true,
+  unreleased: { aheadBy: 2, commits: [{ sha: 'f097330', message: 'fix(界面)：视觉特效开关' }, { sha: 'f0e9053', message: 'fix(鱼缸)：暂停空缸' }] },
+  counts: { mergeable: 98, keepOurs: 3, skipped: 57 },
+  files: {
+    mergeable: [{ file: 'client.js', status: 'modified', additions: 74, deletions: 13 }],
+    keepOurs: [{ file: 'package.json', status: 'modified', additions: 1, deletions: 1 }],
+    skipped: [],
+  },
+  checkedAt: Date.now() - 120_000,
+  ...over,
+})
+
+const textOf = node => {
+  if (node === null || node === undefined) return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join(' ')
+  return textOf(node.props?.children)
+}
+
+await check('UpstreamPanel reads the cached status instead of hitting GitHub', async () => {
+  const app = boot({ fetch: () => ({ body: upstreamStatus() }) })
+  app.draw(app.test.UpstreamPanel, { t: T })
+  await settle()
+  const tree = app.draw(app.test.UpstreamPanel, { t: T })
+  const text = textOf(tree)
+  assert.equal(app.requests.length, 1, 'exactly one GET on mount')
+  assert.match(app.requests[0].url, /\/upstream\/status$/, 'reads the host cache')
+  assert.doesNotMatch(app.requests[0].url, /api\.github\.com/, 'the browser never calls GitHub directly')
+  assert.match(text, /v2\.5\.8/, 'baseline shown')
+  assert.match(text, /v2\.5\.9/, 'latest upstream tag shown')
+  assert.match(text, /upstream\.behind/, 'behind badge shown')
+})
+
+await check('UpstreamPanel reports in-sync without an "updated" claim', async () => {
+  const app = boot({ fetch: () => ({ body: upstreamStatus({ latestTag: 'v2.5.8', behind: [], updated: false, unreleased: { aheadBy: 0, commits: [] }, counts: { mergeable: 0, keepOurs: 0, skipped: 0 }, files: { mergeable: [], keepOurs: [], skipped: [] } }) }) })
+  app.draw(app.test.UpstreamPanel, { t: T })
+  await settle()
+  const text = textOf(app.draw(app.test.UpstreamPanel, { t: T }))
+  assert.match(text, /upstream\.synced/, 'in-sync badge')
+  assert.match(text, /upstream\.noUpdate/, 'explicit "nothing new" line')
+  assert.doesNotMatch(text, /upstream\.behind/, 'no behind badge')
+})
+
+await check('UpstreamPanel keeps the last good result when a check fails', async () => {
+  // This locale keeps the {message} slot visible so the assertion can see what
+  // the panel actually interpolated; an identity t() would swallow it and the
+  // test would pass even if the real reason were dropped.
+  const t = key => `${key} {message}`
+  let fail = false
+  const app = boot({
+    fetch: url => (fail
+      ? { ok: false, status: 502, body: { error: 'getaddrinfo ENOTFOUND api.github.com' } }
+      : { body: upstreamStatus() }),
+  })
+  app.draw(app.test.UpstreamPanel, { t })
+  await settle()
+  let tree = app.draw(app.test.UpstreamPanel, { t })
+  const button = byClass(tree, 'ofm_row').props.children[0]
+  fail = true
+  await button.props.onClick()
+  await settle()
+  tree = app.draw(app.test.UpstreamPanel, { t })
+  const text = textOf(tree)
+  // The version verdict survives — showing "v2.5.8 / nothing new" here would be
+  // a lie that reads exactly like a healthy check.
+  assert.match(text, /v2\.5\.9/, 'previous verdict kept')
+  assert.match(text, /upstream\.failed/, 'failure surfaced')
+  assert.match(text, /ENOTFOUND/, 'the real reason is shown')
+  assert.match(text, /upstream\.stale/, 'and it is labelled as stale')
+})
+
+await check('UpstreamPanel survives a host that has never checked', async () => {
+  const app = boot({ fetch: () => ({ body: upstreamStatus({ latestTag: '', behind: [], updated: false, unreleased: { aheadBy: 0, commits: [] }, checkedAt: 0, counts: { mergeable: 0, keepOurs: 0, skipped: 0 }, files: { mergeable: [], keepOurs: [], skipped: [] } }) }) })
+  app.draw(app.test.UpstreamPanel, { t: T })
+  await settle()
+  const text = textOf(app.draw(app.test.UpstreamPanel, { t: T }))
+  assert.match(text, /upstream\.never/, 'never-checked label instead of a fake timestamp')
+  assert.doesNotMatch(text, /NaN|undefined/, 'no NaN/undefined leaks into the copy')
+})
+
+await check('UpstreamPanel hides the file list until asked', async () => {
+  const app = boot({ fetch: () => ({ body: upstreamStatus() }) })
+  app.draw(app.test.UpstreamPanel, { t: T })
+  await settle()
+  let tree = app.draw(app.test.UpstreamPanel, { t: T })
+  assert.doesNotMatch(textOf(tree), /client\.js/, 'collapsed by default')
+  const toggle = byClass(tree, 'ofm_row').props.children.find(child => child?.props?.onClick && child.props.className === undefined && child.props.disabled === undefined)
+  toggle.props.onClick()
+  tree = app.draw(app.test.UpstreamPanel, { t: T })
+  const text = textOf(tree)
+  assert.match(text, /client\.js/, 'file list expands')
+  assert.match(text, /74 \+/, 'per-file churn shown')
+})
+
+await check('upstream copy exists in both locales', () => {
+  const app = boot()
+  for (const locale of ['zh', 'en']) {
+    for (const key of ['upstream.title', 'upstream.hint', 'upstream.baseline', 'upstream.latest', 'upstream.synced', 'upstream.behind', 'upstream.unreleased', 'upstream.never', 'upstream.check', 'upstream.checking', 'upstream.mergeable', 'upstream.keepOurs', 'upstream.skipped', 'upstream.files', 'upstream.showFiles', 'upstream.hideFiles', 'upstream.failed', 'upstream.stale', 'upstream.noUpdate']) {
+      assert.equal(typeof app.test.DICT[locale][key], 'string', `${locale} ${key}`)
+    }
+  }
 })
 
 console.log(`\n${checks} checks passed`)

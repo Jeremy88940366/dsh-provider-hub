@@ -309,6 +309,29 @@ window.__ModuleLoader__.load({
         'upgrade.notes': '更新说明',
         'upgrade.auto': '自动检查：每 {n} 小时',
         'upgrade.autoOff': '自动检查已关闭',
+        // 上游 OFM 版本追踪。这一块回答的是「我们 fork 的那个项目走到哪了」，
+        // 和上面的「本插件有没有新版本」是两件事，所以单独一组键。
+        'upstream.title': '上游 OFM 同步状态',
+        'upstream.hint': '我们从这个项目 fork 出来。这里显示它发到哪个版本、main 上还有多少未发版提交，以及要跟进的文件。走 api.github.com，不需要代理。',
+        'upstream.baseline': '我们的基线',
+        'upstream.latest': '上游最新',
+        'upstream.synced': '已同步',
+        'upstream.behind': '落后 {n} 个版本',
+        'upstream.unreleased': '{tag} 之后 main 还有 {n} 个提交',
+        'upstream.checkedAt': '上次检查',
+        'upstream.never': '尚未检查',
+        'upstream.check': '检查上游',
+        'upstream.checking': '检查中…',
+        'upstream.mergeable': '要合并 {n} 个文件',
+        'upstream.keepOurs': '保留本地 {n} 个',
+        'upstream.skipped': '跳过 {n} 个',
+        'upstream.files': '文件',
+        'upstream.showFiles': '展开文件清单',
+        'upstream.hideFiles': '收起文件清单',
+        'upstream.failed': '检查上游失败：{message}',
+        'upstream.stale': '上一次成功的检查在 {when}，下面的版本信息来自那时。',
+        'upstream.noUpdate': '上游没有新版本。',
+        'upstream.auto': '与插件自身的自动检查同频（每 {n} 小时）',
         'reload.now': '热重载插件',
         'reload.reloading': '重载中…',
         'reload.done': '插件已热重载（第 {n} 次）。',
@@ -941,6 +964,27 @@ window.__ModuleLoader__.load({
         'upgrade.notes': 'Release notes',
         'upgrade.auto': 'Auto-check: every {n} h',
         'upgrade.autoOff': 'Auto-check off',
+        'upstream.title': 'Upstream OFM sync',
+        'upstream.hint': 'This plugin is a fork of that project. Here is the version it has released, how many unreleased commits sit on main, and which files would need following. Uses api.github.com, so no proxy is required.',
+        'upstream.baseline': 'Our baseline',
+        'upstream.latest': 'Upstream latest',
+        'upstream.synced': 'in sync',
+        'upstream.behind': '{n} version(s) behind',
+        'upstream.unreleased': '{n} commit(s) on main since {tag}',
+        'upstream.checkedAt': 'Last checked',
+        'upstream.never': 'Never checked',
+        'upstream.check': 'Check upstream',
+        'upstream.checking': 'Checking…',
+        'upstream.mergeable': '{n} file(s) to merge',
+        'upstream.keepOurs': '{n} kept local',
+        'upstream.skipped': '{n} skipped',
+        'upstream.files': 'Files',
+        'upstream.showFiles': 'Show file list',
+        'upstream.hideFiles': 'Hide file list',
+        'upstream.failed': 'Upstream check failed: {message}',
+        'upstream.stale': 'The last successful check was {when}; the version info below is from then.',
+        'upstream.noUpdate': 'Upstream has nothing new.',
+        'upstream.auto': 'Same cadence as the plugin auto-check (every {n} h)',
         'reload.now': 'Hot-reload plugin',
         'reload.reloading': 'Reloading…',
         'reload.done': 'Plugin hot-reloaded (#{n}).',
@@ -3663,11 +3707,104 @@ window.__ModuleLoader__.load({
           managed ? null : h('span', { className: 'ofm_note' }, t('reload.done').replace('{n}', String(settings.reloadCount ?? 0)))))
     }
 
+    /**
+     * 上游 OFM 同步状态。
+     *
+     * 和上面的 UpgradePanel 刻意分开：那个说「本插件有没有新版本」，这个说
+     * 「我们 fork 的上游走到哪了」。以前这个问题只能靠 `git fetch upstream`，
+     * 代理一关就完全看不到，所以这里走 api.github.com。
+     *
+     * 状态读的是宿主缓存（GET /upstream/status），只有按「检查上游」才发请求。
+     * 面板每次重渲染都打三个 GitHub API 会把匿名额度（60/小时）烧光。
+     */
+    function UpstreamPanel(props) {
+      const { t } = props
+      const [state, setState] = useState({ status: 'loading', data: undefined, error: '' })
+      const [busy, setBusy] = useState(false)
+      const [open, setOpen] = useState(false)
+      const sequence = useRef(0)
+      const mounted = useRef(true)
+      const load = useCallback(async () => {
+        const request = ++sequence.current
+        try {
+          const data = await api('/upstream/status')
+          if (!mounted.current || request !== sequence.current) return
+          setState({ status: 'ready', data, error: '' })
+        } catch (error) {
+          if (!mounted.current || request !== sequence.current) return
+          setState({ status: 'error', data: undefined, error: String(error?.message ?? error) })
+        }
+      }, [])
+      useEffect(() => {
+        mounted.current = true
+        void load()
+        return () => { mounted.current = false; sequence.current += 1 }
+      }, [load])
+      const check = async () => {
+        if (busy) return
+        setBusy(true)
+        try {
+          const data = await post('/upstream/check', {}, 60_000)
+          if (!mounted.current) return
+          setState({ status: 'ready', data, error: '' })
+        } catch (error) {
+          if (!mounted.current) return
+          // 失败时保留上一次的结论（宿主也是这么做的），只把错误显示出来 ——
+          // 把「网络不通」显示成「上游没更新」会让人以为真的没动。
+          setState(current => ({ status: current.status, data: current.data, error: String(error?.message ?? error) }))
+        } finally {
+          if (mounted.current) setBusy(false)
+        }
+      }
+      const data = state.data
+      const behind = data?.behind?.length ?? 0
+      const counts = data?.counts ?? { mergeable: 0, keepOurs: 0, skipped: 0 }
+      const files = data?.files ?? { mergeable: [], keepOurs: [], skipped: [] }
+      const unreleased = data?.unreleased ?? { aheadBy: 0, commits: [] }
+      const stale = (state.error !== '' || data?.lastError !== '') && (data?.checkedAt ?? 0) > 0
+      return h(Panel, { title: t('upstream.title'), hint: t('upstream.hint') },
+        h('div', { className: 'ofm_upgradecards' },
+          h('span', { className: 'ofm_pill strong' }, `${t('upstream.baseline')}: ${data?.baseline || '…'}`),
+          data?.latestTag ? h('span', { className: 'ofm_pill' }, `${t('upstream.latest')}: ${data.latestTag}`) : null,
+          behind === 0 && data?.latestTag
+            ? h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot ok' }), t('upstream.synced'))
+            : null,
+          behind > 0 ? h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot warn' }), t('upstream.behind').replace('{n}', String(behind))) : null,
+          h('span', { className: 'ofm_pill' }, `${t('upstream.checkedAt')}: ${data?.checkedAt ? ago(data.checkedAt, t.locale) : t('upstream.never')}`)),
+        unreleased.aheadBy > 0 ? h('p', { className: 'ofm_note' }, t('upstream.unreleased').replace('{tag}', data?.latestTag || '?').replace('{n}', String(unreleased.aheadBy))) : null,
+        unreleased.aheadBy > 0 ? h('ul', { className: 'ofm_newsbody' }, ...unreleased.commits.slice(-8).map((commit, index) =>
+          h('li', { key: `${commit.sha}-${index}` }, h('code', null, commit.sha), ' ', commit.message))) : null,
+        h('div', { className: 'ofm_row' },
+          h(Button, { disabled: busy || state.status !== 'ready', onClick: check }, busy ? t('upstream.checking') : t('upstream.check')),
+          data?.updated === true && counts.mergeable > 0
+            ? h('span', { className: 'ofm_note' }, t('upstream.mergeable').replace('{n}', String(counts.mergeable)))
+            : null,
+          counts.keepOurs > 0 ? h('span', { className: 'ofm_note' }, t('upstream.keepOurs').replace('{n}', String(counts.keepOurs))) : null,
+          counts.skipped > 0 ? h('span', { className: 'ofm_note' }, t('upstream.skipped').replace('{n}', String(counts.skipped))) : null,
+          counts.mergeable > 0
+            ? h(Button, { onClick: () => setOpen(current => !current) }, open ? t('upstream.hideFiles') : t('upstream.showFiles'))
+            : null),
+        state.status === 'ready' && data?.updated === false ? h('p', { className: 'ofm_note' }, t('upstream.noUpdate')) : null,
+        stale ? h('div', { className: 'ofm_callout' }, t('upstream.stale').replace('{when}', data?.checkedAt ? ago(data.checkedAt, t.locale) : t('upstream.never'))) : null,
+        state.error !== '' || data?.lastError
+          ? h('div', { className: 'ofm_callout ofm_error' }, t('upstream.failed').replace('{message}', state.error || data.lastError)) : null,
+        open && files.mergeable.length > 0 ? h('div', { className: 'ofm_sec', style: { gap: 4 } },
+          h('span', { className: 'ofm_note' }, t('upstream.files')),
+          h('ul', { className: 'ofm_newsbody' }, ...files.mergeable.map((file, index) =>
+            h('li', { key: `${file.file}-${index}` },
+              h('code', null, `${String(file.additions)} +  ${String(file.deletions)} -`), ' ', file.file)))) : null,
+        files.keepOurs.length > 0 && open ? h('div', { className: 'ofm_sec', style: { gap: 4 } },
+          h('span', { className: 'ofm_note' }, t('upstream.keepOurs').replace('{n}', String(files.keepOurs.length))),
+          h('ul', { className: 'ofm_newsbody' }, ...files.keepOurs.map((file, index) =>
+            h('li', { key: `keep-${file.file}-${index}` }, file.file)))) : null)
+    }
+
     function UpgradePage(props) {
       const { t, settings, onApply, busy } = props
       return h('div', { className: 'ofm_page' },
         h(PageHero, { title: t('section.upgrade'), sub: t('section.upgradeHint') }),
-        h(UpgradePanel, { t, settings, onApply, busy }))
+        h(UpgradePanel, { t, settings, onApply, busy }),
+        h(UpstreamPanel, { t }))
     }
 
 
@@ -6333,7 +6470,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'provider-hub'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth, DICT, useChannelRpc, Shell, Tank, Switch, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, UpstreamPanel, useEacLogin, EacAuth, DICT, useChannelRpc, Shell, Tank, Switch, CSS }
     return module.exports
   },
 })

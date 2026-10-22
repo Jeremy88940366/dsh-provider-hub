@@ -10,6 +10,20 @@
 
 ## 同步上游更新
 
+先看上游走到哪了 —— 这条不需要代理，也不需要 clone：
+
+```bash
+npm run upstream:check          # 人读
+npm run upstream:json           # 给脚本用
+node scripts/check-upstream.mjs --quiet   # 只在有更新时输出，退出码 1 = 有更新
+```
+
+它走 `api.github.com`，列出上游最新 tag、`main` 上未发版的提交、以及从我们的基线到最新版之间的**文件级**改动，并按下面的 SKIP_PATHS / KEEP_OURS 分成「要合并 / 保留本地 / 已跳过」三组。插件界面里同一个结论显示在「升级」页底部的「上游 OFM 同步状态」面板，跟着 `updateCheckHours` 的节奏自动刷新，也可以按「检查上游」立刻查一次。
+
+> 为什么不用 `git fetch upstream`：那条路走 `github.com:443`，代理一关就断。`api.github.com` 是直连的。
+
+确认有更新后再同步：
+
 ```bash
 git fetch upstream --tags        # 首次：git remote add upstream https://github.com/Ebony-Vinyl/dsh-our-free-model.git
 node scripts/sync-upstream.mjs --list        # 看有哪些新版本
@@ -19,10 +33,12 @@ node scripts/sync-upstream.mjs --apply       # 真正写入
 
 它做的事：把上游「基线版本」和「目标版本」**都套上同一个改名映射**，再和我们的文件做三路合并（`git merge-file`）。所以上游的功能改动会进来，而我们的改动（删掉的推广页、赞助条、公告中心，以及保留下来的渠道）不会被冲掉。
 
-- **基线**记在 `sync-base.json`，只在无冲突且 `--apply` 成功后才推进。
+- **基线**记在 `sync-base.json`，只在无冲突且 `--apply` 成功后才推进。界面上的「我们的基线」读的就是它。
 - **冲突**会以 `<<<<<<<` 标记写进文件，脚本退出码 2。解决完再跑一次。
-- **永远保留本地版本**的文件（写在脚本的 `KEEP_OURS`）：`README.md`、`package.json`、`feed/manifest.json`、`cordis.patch.yml`、`LICENSE`。上游对它们的改动只在报告里列出，不会覆盖。
+- **永远保留本地版本**的文件（`KEEP_OURS`）：`README.md`、`package.json`、`feed/manifest.json`、`cordis.patch.yml`、`LICENSE`。上游对它们的改动只在报告里列出，不会覆盖。
 - **不跟随上游的路径**（`SKIP_PATHS`）：`.github/`、`packages/standalone/`、`catalog/`、`docs/`、`scripts/`（上游的测试脚本）、`feed/announcements.json`、`src/sponsor.*`、`src/feed.js`、`src/picks.js`。
+
+这两份清单在 `src/upstream-track.js` 里有一份副本（`SKIP_PATHS` / `KEEP_OURS`），供界面与 CLI 分组用。`npm run test:upstream` 会校验它们与 `scripts/sync-upstream.mjs` 一致 —— 不一致时界面会宣称有 N 个文件要处理，而合并时全被跳过。
 
 ## 改名映射
 
@@ -53,6 +69,7 @@ CSS 类名前缀 `ofm_`（1501 处）**故意保留不改**——纯视觉，不
    - 鱼缸休眠：`Tank` 挂 `data-ofm-motion`，空缸（`pct` 为 0）或滚出视口时停掉三条无限循环动画，重新可见或有水量时恢复，卸载时 `disconnect()`。
    - 上游这两处改的是 `useCountUp`/`RecoCard`/`PicksPage` 的调用点，本仓库没有推荐页，故未带过来；开关控件复用本仓库已有的 `Switch`（`client.js` 里原本就有 `ofm_switch` 样式）。
    - 回归测试：`npm run test:ui`（`scripts/plugin-ui-test.mjs`，headless 渲染 `Tank` 与 `Shell`，9 条断言）。
+9. **上游版本追踪**（3.7.13）：`src/upstream-track.js` 走 `api.github.com` 查上游最新 tag、`main` 未发版提交与基线间的文件级差异，结果落 `upstream-state.json`；界面在「升级」页底部显示（`UpstreamPanel`），另有 `npm run upstream:check` 的 CLI 版本。判定逻辑只有 `summarizeUpstream()` 一处，CLI 与界面共用。回归测试：`npm run test:upstream`。
 
 ## 发版
 
@@ -160,7 +177,7 @@ ssh -T git@github.com    # 应回 "Hi Jeremy88940366! You've successfully authen
 
 ## 数据目录
 
-`~/.dsh/provider-hub/`：`settings.json`、`stats.json`、`catalog.json`、`availability.json`、`feed.json`、`keys/`、`git-credentials`（推送凭据，不属插件数据）。
+`~/.dsh/provider-hub/`：`settings.json`、`stats.json`、`catalog.json`、`availability.json`、`feed.json`、`upstream-state.json`（上游检查的上次成功结论）、`keys/`、`git-credentials`（推送凭据，不属插件数据）。
 
 渠道账号与凭据不在这个目录里：账号在 `~/.dsh/channel-pack/state.json`，凭据在 `~/.dsh/.credentials.yaml`。
 

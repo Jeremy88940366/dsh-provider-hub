@@ -42,6 +42,7 @@ import { unlockSealedLane } from './src/vault.js'
 import { budgetLadder } from './src/effort.js'
 import { modelAvailability } from './src/model-test.js'
 import { PluginUpdater } from './src/updater.js'
+import { UpstreamTracker } from './src/upstream-track.js'
 import { selfReload, watchPackage, isReloading } from './src/reload.js'
 import { createPushHub } from './src/push.js'
 import { rejectionFor, isLoopbackHost, connectionAdmissionView } from './src/trust.js'
@@ -351,6 +352,20 @@ export function apply(ctx, config) {
   })
   /** Update versions we have already pushed a notification for. */
   let updateNotifiedFor = typeof settings.get().updateNotifiedFor === 'string' ? settings.get().updateNotifiedFor : ''
+
+  /**
+   * 上游 OFM 的版本追踪。
+   *
+   * 与 updater 分开两件事：那个回答「本插件有没有新版本」，这个回答「我们 fork
+   * 的上游走到哪了」。后者以前只能靠 `git fetch upstream --tags`，而那条路走
+   * github.com:443，代理一关就断 —— 于是 fork 之后完全看不到上游动向。
+   * 这里走 api.github.com，直连可用。
+   */
+  const upstreamTracker = new UpstreamTracker({
+    pkgDir: PKG_DIR,
+    dataDir,
+    log: message => logger.info?.(message),
+  })
 
   /** Push an `update` event once per version (manual checks force a re-push). */
   function pushUpdate(force = false) {
@@ -1292,6 +1307,14 @@ export function apply(ctx, config) {
       },
       apply: applyUpgrade,
     },
+    /**
+     * 上游 OFM 的版本状态。读的是上一次成功检查的缓存，`check` 才发请求 ——
+     * 面板每次重渲染都打三次 GitHub API 会把匿名额度烧光。
+     */
+    upstream: {
+      status: () => upstreamTracker.status(),
+      check: () => upstreamTracker.check(),
+    },
     hotReload: () => {
       if (managed) throw httpError(409, MANAGED_MESSAGE)
       return reloadFromDisk()
@@ -1448,6 +1471,25 @@ export function apply(ctx, config) {
       if (!Number.isFinite(hours) || hours <= 0) return
       void updater.check().then(() => pushUpdate(false)).catch(() => {})
     }, () => positiveOr(Number(settings.get().updateCheckHours ?? 6) * 60, 360, 60) * 60_000)
+    // 上游 OFM 的版本追踪。与上面同一个节奏（上游打 tag 以周计，单独定一个周期
+    // 只是多一个要解释的数字），但第一次要早点跑：否则装完插件后要等 6 小时才
+    // 第一次知道上游在哪，而刚装完正是最想知道的时候。失败只是日志一行，下次
+    // 周期重试；缓存里的上一次成功结果不受影响。
+    every(() => {
+      const hours = Number(settings.get().updateCheckHours ?? 6)
+      if (!Number.isFinite(hours) || hours <= 0) return
+      void upstreamTracker.check().catch(error => {
+        logger.info?.(`provider-hub: upstream check failed (${error?.message ?? error})`)
+      })
+    }, () => positiveOr(Number(settings.get().updateCheckHours ?? 6) * 60, 360, 60) * 60_000)
+    // 开机 20 秒后的那一次。延后是给别的启动任务让路（探测、清单刷新都在抢同一条
+    // 出网链路），不是怕冲突 —— 三次 GitHub API 请求谁先谁后都无所谓。
+    const bootUpstream = setTimeout(() => {
+      if (disposed) return
+      void upstreamTracker.check().catch(() => {})
+    }, 20_000)
+    bootUpstream.unref?.()
+    ctx.effect(() => () => clearTimeout(bootUpstream), 'provider-hub: upstream boot check')
   }
   // The probe period is in minutes, and one minute is the floor — a value of 0 or
   // a negative one would otherwise spin. This used to read `Math.max(60, …)`,
@@ -1755,6 +1797,15 @@ export function createApiRoutes(deps) {
       // still served by /announcement above.
       if (method === 'GET' && routePath === '/update/status') {
         return send(200, deps.update.status())
+      }
+      if (method === 'GET' && routePath === '/upstream/status') {
+        return send(200, deps.upstream.status())
+      }
+      if (method === 'POST' && routePath === '/upstream/check') {
+        // 一次检查三个请求，且 GitHub 匿名额度是 60/小时 —— 允许它慢，不允许它
+        // 被面板的重复点击叠起来。tracker 内部的 checking 标志会挡掉并发。
+        const status = await deps.upstream.check()
+        return send(200, status)
       }
       if (method === 'POST' && routePath === '/update/check') {
         const result = await deps.update.check()
