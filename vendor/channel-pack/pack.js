@@ -68639,6 +68639,7 @@ function apply(ctx, config = {}) {
     "llm-qoder",
     "llm-qodercn",
     "llm-trae",
+    "llm-cline",
     "llm-loomy",
     "llm-raccoon"
   );
