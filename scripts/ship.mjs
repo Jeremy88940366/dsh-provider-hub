@@ -162,13 +162,39 @@ if (dryRun) {
   process.exit(0)
 }
 
+// 推送失败最常见的原因是连不上 github.com —— 本机到 github.com:443 时通时不通，
+// 而 api.github.com 一直正常，所以「网页能开」不代表能推。git 只会甩一句
+// "Could not connect to server"，分不清是网络还是凭据，所以这里分开报。
 step(`推送 origin/${branch}`)
 const ahead = Number(git('rev-list', '--count', `origin/${branch}..HEAD`))
 if (ahead === 0) {
   console.log('  已经在远端，无需推送')
   process.exit(0)
 }
-git('push', 'origin', branch)
+try {
+  execFileSync('git', ['push', 'origin', branch], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+} catch (error) {
+  const detail = [String(error.stdout ?? ''), String(error.stderr ?? '')].join('\n').trim()
+  if (detail) console.error(detail)
+  const proxy = (() => {
+    try {
+      return execFileSync('git', ['config', '--get', 'http.proxy'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    } catch { return '' }
+  })()
+  if (/Could not connect to server|unable to access|Connection (timed out|refused)|Failed to connect/i.test(detail)) {
+    console.error('\n✗ 连不上 github.com —— 提交已经存在本地，网络恢复后直接 git push 即可，不用重跑本脚本。')
+    if (proxy === '') {
+      console.error('  当前没有配代理。本机到 github.com:443 时通时不通，配一个再试：')
+      console.error('    git config http.proxy http://127.0.0.1:7890')
+    } else {
+      console.error(`  当前代理 ${proxy}，确认它开着：curl -x ${proxy} -I https://github.com`)
+    }
+  } else if (/Authentication failed|could not read Username|403/i.test(detail)) {
+    console.error('\n✗ 凭据被拒。token 可能过期了，重填：')
+    console.error("  printf 'protocol=https\\nhost=github.com\\nusername=Jeremy88940366\\npassword=<token>\\n\\n' | git credential approve")
+  }
+  process.exit(1)
+}
 console.log(`  → 推送了 ${ahead} 个提交`)
 
 step('完成')
