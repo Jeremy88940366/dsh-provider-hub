@@ -1,0 +1,177 @@
+#!/usr/bin/env node
+/**
+ * 一条命令发版：重签清单 → 提交 → 推送。
+ *
+ * 为什么要有这个脚本：发版有三步，其中「重签清单」最容易被忘。忘了它，
+ * `git push` 照样成功，但 feed/manifest.json 里的 sha256 还是上一版的 ——
+ * 别的机器拉更新时逐文件校验对不上，整次更新被拒。症状是「推送了但没人
+ * 收到更新」，而且不会报错，只会在安装端日志里留下一行校验失败。
+ * 所以这里把三步绑成一次原子操作：清单签不过就根本不提交。
+ *
+ * 用法：
+ *   node scripts/ship.mjs "3.7.5: 修 xxx"          改版本号 + 发版 + 推送
+ *   node scripts/ship.mjs --notes notes.md "..."   带发布说明（写进清单的 notes 字段）
+ *   node scripts/ship.mjs --no-bump "..."          版本号已经改好了，只发版
+ *   node scripts/ship.mjs --dry-run "..."          只跑到提交为止，不推送
+ *
+ * 版本号规则：--no-bump 之外的场合，patch 位自动 +1。要跳 minor/major
+ * 就自己改 package.json 再走 --no-bump。
+ */
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(HERE, '..')
+const PKG = path.join(ROOT, 'package.json')
+
+const argv = process.argv.slice(2)
+const has = flag => argv.includes(flag)
+const argOf = flag => {
+  const i = argv.indexOf(flag)
+  return i >= 0 ? argv[i + 1] : undefined
+}
+// 位置参数 = 提交说明；跳过所有 flag 及其值
+const flagsWithValue = new Set(['--notes'])
+const message = argv.filter((a, i) => {
+  if (a.startsWith('--')) return false
+  if (i > 0 && flagsWithValue.has(argv[i - 1])) return false
+  return true
+}).join(' ').trim()
+
+const dryRun = has('--dry-run')
+const noBump = has('--no-bump')
+
+if (message === '') {
+  console.error('✗ 缺少提交说明。用法：node scripts/ship.mjs "3.7.5: 改了什么"')
+  process.exit(1)
+}
+
+/** 跑 git，输出直接透传到终端；失败即退出（不能带着半成品继续推） */
+function git(...args) {
+  try {
+    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  } catch (error) {
+    const detail = [error.stdout, error.stderr].filter(Boolean).join('\n').trim()
+    console.error(`✗ git ${args.join(' ')} 失败`)
+    if (detail) console.error(detail)
+    process.exit(1)
+  }
+}
+
+function step(text) {
+  console.log(`\n▸ ${text}`)
+}
+
+// ── 0. 前置检查：别在脏历史/错误分支上发版 ───────────────────────────────────
+step('检查仓库状态')
+const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
+if (branch !== 'main') {
+  console.error(`✗ 当前在 ${branch} 分支，发版只从 main 走`)
+  process.exit(1)
+}
+// 未跟踪文件不算脏（可能是本地草稿），但已跟踪文件的改动必须在下面被我们提交掉。
+// 这里只拦「有冲突」和「正在 rebase/merge」这两种会毁掉提交的状态。
+const gitDir = path.join(ROOT, '.git')
+for (const marker of ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD']) {
+  if (fs.existsSync(path.join(gitDir, marker))) {
+    console.error(`✗ 仓库正在 rebase/merge/cherry-pick 中（.git/${marker} 存在），先收尾`)
+    process.exit(1)
+  }
+}
+// 提交身份必须已经配好。没配的话 git 会在 commit 时才炸，而那时清单已经重签过、
+// 文件已经被 add 进暂存区 —— 版本号白改了，得手工回滚。
+for (const key of ['user.name', 'user.email']) {
+  let value = ''
+  try {
+    value = execFileSync('git', ['config', '--get', key], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch { /* 未配置时 git config 返回 1 */ }
+  if (value === '') {
+    console.error(`✗ 没有配置 ${key}，git 无法提交。先跑：`)
+    console.error(`    git config ${key} ${key === 'user.name' ? '"你的名字"' : '"you@example.com"'}`)
+    process.exit(1)
+  }
+}
+console.log(`  分支 ${branch}，HEAD ${git('rev-parse', '--short', 'HEAD')}`)
+
+// ── 1. 版本号 ────────────────────────────────────────────────────────────────
+const pkg = JSON.parse(fs.readFileSync(PKG, 'utf8'))
+let version = pkg.version
+if (!noBump) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
+  if (m === null) {
+    console.error(`✗ package.json 的 version "${version}" 不是 x.y.z，无法自动进位；改好后用 --no-bump`)
+    process.exit(1)
+  }
+  version = `${m[1]}.${m[2]}.${Number(m[3]) + 1}`
+  pkg.version = version
+  fs.writeFileSync(PKG, `${JSON.stringify(pkg, null, 2)}\n`)
+  step(`版本 ${m[0]} → ${version}`)
+} else {
+  step(`版本保持 ${version}（--no-bump）`)
+}
+
+// ── 2. 重签清单 ──────────────────────────────────────────────────────────────
+// sign-release.mjs 自己会在落盘后按安装端路径回读验签，验不过就非零退出。
+// 它退出即代表「这份清单推上去也没人能装」，所以这里跟着停。
+step('重签 feed/manifest.json')
+const signArgs = [path.join(HERE, 'sign-release.mjs')]
+const notesFile = argOf('--notes')
+if (notesFile !== undefined) signArgs.push('--notes', notesFile)
+
+// 先问一句「现在这份清单还准吗」。准就跳过重签 —— publishedAt 每次都变，
+// 无条件重签会让「什么都没改」也产生一个只有时间戳差异的提交。
+// --check 在文件树和版本号都对得上时退出 0。
+let manifestFresh = false
+try {
+  execFileSync(process.execPath, [...signArgs, '--check'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  manifestFresh = true
+} catch { /* 不一致 → 走下面的重签 */ }
+
+if (manifestFresh) {
+  console.log('  文件树与版本号都没变，清单仍然有效，跳过重签')
+} else {
+  try {
+    const out = execFileSync(process.execPath, signArgs, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    console.log(out.trimEnd())
+  } catch (error) {
+    const detail = [error.stdout, error.stderr].filter(Boolean).join('\n').trim()
+    if (detail) console.error(detail)
+    console.error('✗ 清单签名失败 —— 已中止，没有提交任何东西')
+    process.exit(1)
+  }
+}
+
+// ── 3. 提交 ──────────────────────────────────────────────────────────────────
+step('提交')
+git('add', '-A')
+const staged = git('diff', '--cached', '--name-only')
+if (staged === '') {
+  console.log('  没有需要提交的改动')
+} else {
+  console.log(staged.split('\n').map(f => `  ${f}`).join('\n'))
+  git('commit', '-q', '-m', message)
+  console.log(`  → ${git('rev-parse', '--short', 'HEAD')} ${git('log', '-1', '--format=%s')}`)
+}
+
+// ── 4. 推送 ──────────────────────────────────────────────────────────────────
+if (dryRun) {
+  step('--dry-run：跳过推送')
+  console.log(`  要推的时候跑：git push origin ${branch}`)
+  process.exit(0)
+}
+
+step(`推送 origin/${branch}`)
+const ahead = Number(git('rev-list', '--count', `origin/${branch}..HEAD`))
+if (ahead === 0) {
+  console.log('  已经在远端，无需推送')
+  process.exit(0)
+}
+git('push', 'origin', branch)
+console.log(`  → 推送了 ${ahead} 个提交`)
+
+step('完成')
+console.log(`  ${version} 已推送到 ${git('remote', 'get-url', 'origin')}`)
+console.log('  提醒：本机 profile 里的副本是 file: 依赖的拷贝，不是软链；')
+console.log('        改了源文件要 cp 到 profiles/desktop/node_modules/dsh-provider-hub/ 再刷新页面。')
