@@ -122,7 +122,37 @@ git config https.proxy http://127.0.0.1:7890
 
 代理没开时 `git push` 报 `Failed to connect to github.com:443`；`ship.mjs` 会区分「连不上」和「凭据被拒」，并提示提交已经在本地、网络恢复后直接 `git push` 即可。
 
-备选：`ssh.github.com:443` 这条 TCP 通路是稳定的（可作 SSH over 443 的退路，需要先生成密钥并加到 GitHub）。
+### 备选通路：SSH over 443
+
+`github.com:443` 不稳，但 `ssh.github.com:443` 的 TCP 一直通，而且 SSH 不走 `http.proxy`（自己出网），所以它不依赖代理。仓库里已加好第二条远端：
+
+```bash
+git remote add ssh git@github.com:Jeremy88940366/dsh-provider-hub.git
+```
+
+`~/.ssh/config` 把 `github.com` 映射到 `ssh.github.com:443`：
+
+```
+Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519_provider_hub
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+```
+
+`ship.mjs` 的行为：先推 `origin`（HTTPS），若判定为网络不通且存在 `ssh` 远端，自动改用 `ssh` 重试一次；成功即结束。`origin` 保持 HTTPS 不变，`fetch` 仍走代理 —— 只有推送会切通路。
+
+首次使用前要把公钥登记到 GitHub（Settings → SSH keys，https://github.com/settings/ssh/new）：
+
+```bash
+cat ~/.ssh/id_ed25519_provider_hub.pub
+ssh -T git@github.com    # 应回 "Hi Jeremy88940366! You've successfully authenticated"
+```
+
+> 本机的 OAuth token 只有 `read:user, repo, workflow` 三个 scope，**不能**通过 API 代为登记 SSH key（`POST /user/keys` 返回 404）—— 这一步只能手动在网页上做。
+
 
 
 
