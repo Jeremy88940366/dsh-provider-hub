@@ -68536,12 +68536,8 @@ function apply(ctx, config = {}) {
     "llm-qoder",
     "llm-qodercn",
     "llm-trae",
-    "llm-cline",
     "llm-loomy",
-    "llm-raccoon",
-    "llm-minimax",
-    "llm-zcode",
-    "llm-gemini"
+    "llm-raccoon"
   );
   const service = new CodeArtsAuth(ctx, { fetcher: signedNetwork.fetch });
   const pool = new AccountPool(ctx);
