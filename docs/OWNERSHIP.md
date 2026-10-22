@@ -142,7 +142,9 @@ Host github.com
   StrictHostKeyChecking accept-new
 ```
 
-`ship.mjs` 的行为：先推 `origin`（HTTPS），若判定为网络不通且存在 `ssh` 远端，自动改用 `ssh` 重试一次；成功即结束。`origin` 保持 HTTPS 不变，`fetch` 仍走代理 —— 只有推送会切通路。
+`ship.mjs` 的行为：先花 400ms 探代理端口 —— 连不上就直接走 `ssh`（不再干等 git 自己超时 20 秒）；代理活着就试 `origin`（HTTPS），失败再降级到 `ssh`。推成功后跑一次 `git fetch ssh` 把 `origin/*` 跟踪引用对齐（`remote.ssh.fetch` 已配成 `+refs/heads/*:refs/remotes/origin/*`），否则代理关着时 `origin/main` 是旧的、`ahead` 计数会虚高。
+
+`origin` 保持 HTTPS 不变，`fetch` 仍走代理 —— 只有推送会切通路。**代理关着也能正常发版**。
 
 首次使用前要把公钥登记到 GitHub（Settings → SSH keys，https://github.com/settings/ssh/new）：
 
