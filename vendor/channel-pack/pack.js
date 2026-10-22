@@ -60363,6 +60363,14 @@ function utc8DateString(nowMs = Date.now()) {
 }
 var DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS = "DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS";
 var AUTO_CHECKIN_DELAY_MS = 3e4;
+/**
+ * 一天最多自动重试几次。
+ *
+ * `lastDate` 只在「所有渠道都签完」时才置今天；有渠道报错或失败就留空，下次启动
+ * 会再试一遍。给这个重试封顶，免得某个渠道长期失败时每次启动都把账号全打一遍。
+ */
+const AUTO_CHECKIN_MAX_ATTEMPTS = 3;
+
 function autoCheckinDelayMs(env = process.env) {
   const raw = env[DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS];
   if (typeof raw !== "string" || raw.trim().length === 0) return AUTO_CHECKIN_DELAY_MS;
@@ -60439,9 +60447,6 @@ function describeRun(totals) {
   if (parts.length === 0) return `${totals.providers} \u4E2A\u6E20\u9053\uFF1A\u6CA1\u6709\u9700\u8981\u9886\u53D6\u7684\u8D26\u53F7`;
   return `${totals.providers} \u4E2A\u6E20\u9053\uFF1A${parts.join("\uFF0C")}`;
 }
-function shouldMarkToday(totals) {
-  return totals.coversToday > 0;
-}
 function describeChannel(summary) {
   const parts = [];
   if (summary.claimed > 0) {
@@ -60470,6 +60475,11 @@ function createAutoCheckin(deps) {
       enabled: doc.enabled,
       lastDate: doc.lastDate,
       ranToday: doc.lastDate !== "" && doc.lastDate === today(),
+      // 「跑过一次」不等于「今天签完了」：上次还有渠道失败/报错时这里为 true，
+      // 面板据此显示「今日签到未完成」，而不是笼统的「今日已自动签到」。
+      partial: doc.lastPendingDate !== "" && doc.lastPendingDate === today(),
+      pendingProviders: doc.lastPendingDate === today() && Array.isArray(doc.lastPendingProviders) ? [...doc.lastPendingProviders] : [],
+      pendingCount: doc.lastPendingDate === today() && Array.isArray(doc.lastPendingProviders) ? doc.lastPendingProviders.length : 0,
       running: running2,
       lastResult: doc.lastResult,
       lastAt: doc.lastAt,
@@ -60484,14 +60494,27 @@ function createAutoCheckin(deps) {
     try {
       providers = [...new Set(await deps.listProviderIds())].sort();
     } catch (error) {
-      deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\uFF1A\u8BFB\u53D6\u8D26\u53F7\u6C60\u5931\u8D25\uFF0C\u672C\u6B21\u8DF3\u8FC7: ${String(error)}`);
+      deps.warn?.(`[channel-pack] 自动签到：读取账号池失败，本次跳过: ${String(error)}`);
       return;
     }
     const channels = [];
+    // 每行都带计数：只留一句展示文案的话，「这个渠道为什么还能领」在写盘时就丢了，
+    // 面板只能笼统显示「今日已自动签到」。
+    const chanRow = (provider, extra) => ({
+      provider,
+      claimed: 0,
+      alreadyClaimed: 0,
+      failed: 0,
+      inactive: 0,
+      errors: 0,
+      skipped: 0,
+      text: "",
+      ...extra
+    });
     for (const provider of providers) {
       if (isAutoCheckinExcluded(provider)) {
         totals.skipped += 1;
-        channels.push({ provider, text: "\u9700\u624B\u52A8\u7B7E\u5230" });
+        channels.push(chanRow(provider, { skipped: 1, text: "需手动签到" }));
         continue;
       }
       let result;
@@ -60499,26 +60522,26 @@ function createAutoCheckin(deps) {
         result = await deps.claim(provider);
       } catch (error) {
         totals.errors += 1;
-        channels.push({ provider, text: "\u51FA\u9519" });
-        deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\uFF1A${provider} \u8C03\u7528\u5F02\u5E38: ${String(error)}`);
+        channels.push(chanRow(provider, { errors: 1, text: "出错" }));
+        deps.warn?.(`[channel-pack] 自动签到：${provider} 调用异常: ${String(error)}`);
         continue;
       }
       if (!result.ok) {
         const message2 = typeof result.error?.message === "string" ? result.error.message : "";
         if (isUnsupportedCheckin(message2)) {
           totals.skipped += 1;
-          channels.push({ provider, text: "\u65E0\u7B7E\u5230\u63A5\u53E3" });
+          channels.push(chanRow(provider, { skipped: 1, text: "无签到接口" }));
           continue;
         }
         totals.errors += 1;
-        channels.push({ provider, text: "\u51FA\u9519" });
-        deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\uFF1A${provider} \u5931\u8D25: ${message2 || "\u672A\u77E5\u9519\u8BEF"}`);
+        channels.push(chanRow(provider, { errors: 1, text: "出错" }));
+        deps.warn?.(`[channel-pack] 自动签到：${provider} 失败: ${message2 || "未知错误"}`);
         continue;
       }
       totals.providers += 1;
       const summary = result.value?.summary;
       if (summary === void 0) {
-        channels.push({ provider, text: "\u65E0\u53EF\u9886" });
+        channels.push(chanRow(provider, { text: "无可领" }));
         continue;
       }
       totals.claimed += summary.claimed;
@@ -60530,17 +60553,34 @@ function createAutoCheckin(deps) {
       totals.inactive += summary.inactive;
       totals.failed += summary.failed;
       totals.coversToday += summary.coversToday ?? summary.claimed + summary.alreadyClaimed;
-      channels.push({ provider, text: describeChannel(summary) });
+      channels.push(chanRow(provider, {
+        claimed: Number(summary.claimed) || 0,
+        alreadyClaimed: Number(summary.alreadyClaimed) || 0,
+        failed: Number(summary.failed) || 0,
+        inactive: Number(summary.inactive) || 0,
+        text: describeChannel(summary)
+      }));
     }
-    if (!shouldMarkToday(totals)) {
+    // 有渠道报错或失败就不能算「今天签完了」：否则徽章写「今日已自动签到」，用户
+    // 手动点「一键领取」却还能领到积分 —— 这正是「显示不准」的来源。
+    const pendingProviders = channels
+      .filter((entry) => (Number(entry.failed) || 0) + (Number(entry.errors) || 0) > 0)
+      .map((entry) => entry.provider);
+    const doneToday = pendingProviders.length === 0 && totals.coversToday > 0;
+    if (pendingProviders.length === 0 && !doneToday) {
       deps.warn?.(
-        `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u672A\u8BB0\u5165\u4ECA\u65E5\uFF08\u4E0B\u6B21\u542F\u52A8\u4F1A\u91CD\u8BD5\uFF09\uFF1A${describeRun(totals)}`
+        `[channel-pack] 自动签到未记入今日（下次启动会重试）：${describeRun(totals)}`
       );
       return;
     }
     doc = {
       ...doc,
-      lastDate: today(),
+      // 只有真的签完才置今天；有渠道待补签时留空，`runIfDue` 下次启动会再来一遍。
+      lastDate: doneToday ? today() : "",
+      lastPendingDate: doneToday ? "" : today(),
+      lastPendingProviders: doneToday ? [] : pendingProviders,
+      attemptDate: today(),
+      attempts: doc.attemptDate === today() ? (Number(doc.attempts) || 0) + 1 : 1,
       lastResult: describeRun(totals),
       lastAt: now(),
       channels,
@@ -60551,14 +60591,16 @@ function createAutoCheckin(deps) {
     try {
       await deps.store.save(doc);
     } catch (error) {
-      deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\u7ED3\u679C\u5199\u5165\u5931\u8D25\uFF08\u4ECA\u5929\u53EF\u80FD\u91CD\u590D\u89E6\u53D1\u4E00\u6B21\uFF09: ${String(error)}`);
+      deps.warn?.(`[channel-pack] 自动签到结果写入失败（今天可能重复触发一次）: ${String(error)}`);
     }
-    deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5B8C\u6210\uFF08${today()}\uFF09\uFF1A${doc.lastResult}`);
+    deps.warn?.(`[channel-pack] 自动签到完成（${today()}）：${doc.lastResult}`);
   }
   function runIfDue() {
     if (inflight !== null) return inflight;
     if (!doc.enabled) return Promise.resolve();
     if (doc.lastDate !== "" && doc.lastDate === today()) return Promise.resolve();
+    // 待补签状态会绕过上面那条提前返回；重试次数封顶，别把失败渠道打成扫描器。
+    if (doc.attemptDate === today() && (Number(doc.attempts) || 0) >= AUTO_CHECKIN_MAX_ATTEMPTS) return Promise.resolve();
     running2 = true;
     const task = performRun().catch((error) => {
       deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5F02\u5E38: ${String(error)}`);
@@ -60591,6 +60633,61 @@ function createAutoCheckin(deps) {
       pending = (deps.schedule ?? defaultSchedule)(fire, ms);
     },
     runIfDue,
+    /**
+     * 手动「一键领取」成功后调用：把这条渠道从今日待补签里划掉。
+     *
+     * 没有这一步，自动签到里失败过的渠道会一直挂在待补签上 —— 用户明明手动领到了
+     * 积分，徽章还写着「今日签到未完成」。
+     *
+     * 反过来也要处理：自动签到说今天已完成，手动却还领到了积分，说明那次要么跑得太早
+     * （上游每日重置不在 UTC+8 零点），要么当时其实有渠道失败。两种情况下「已签到」
+     * 都是错的，改判为待补签并允许重试。
+     */
+    async noteManualClaim(provider, summary) {
+      if (typeof provider !== "string" || provider === "") return state();
+      const claimed = Number(summary?.claimed ?? 0);
+      const already = Number(summary?.alreadyClaimed ?? 0);
+      if (claimed <= 0 && already <= 0) return state();
+      const channels2 = doc.channels.map((entry) => entry.provider === provider
+        ? {
+          ...entry,
+          failed: 0,
+          errors: 0,
+          claimed: (Number(entry.claimed) || 0) + claimed,
+          alreadyClaimed: (Number(entry.alreadyClaimed) || 0) + already
+        }
+        : entry);
+      const wasDone = doc.lastDate !== "" && doc.lastDate === today();
+      const pending = doc.lastPendingDate === today() && Array.isArray(doc.lastPendingProviders) ? [...doc.lastPendingProviders] : [];
+      if (!wasDone && !pending.includes(provider)) return state();
+      if (wasDone && claimed > 0) {
+        // 早跑 / 当时有渠道失败：撤销「今天已完成」，改成待补签并放开重试。
+        doc = {
+          ...doc,
+          lastDate: "",
+          lastPendingDate: today(),
+          lastPendingProviders: [provider],
+          attemptDate: "",
+          attempts: 0,
+          channels: channels2
+        };
+      } else {
+        const rest = pending.filter((id) => id !== provider);
+        doc = {
+          ...doc,
+          lastDate: rest.length === 0 ? today() : doc.lastDate,
+          lastPendingDate: rest.length === 0 ? "" : doc.lastPendingDate,
+          lastPendingProviders: rest,
+          channels: channels2
+        };
+      }
+      try {
+        await deps.store.save(doc);
+      } catch (error) {
+        deps.warn?.(`[channel-pack] 自动签到状态写入失败: ${String(error)}`);
+      }
+      return state();
+    },
     async dismiss() {
       doc = { ...doc, dismissedRunAt: doc.lastAt };
       try {
@@ -60986,6 +61083,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       }
       try {
         const result = await handleMethod(call.method, call.payload, request2.signal);
+        // 手动领取成功也算今日已签：不通知这一下，自动签到失败过的渠道会让徽章一直
+        // 停在「今日签到未完成」，哪怕用户刚手动领到了积分。自动签到自身走 deps.claim，
+        // 不经过这里，所以不会重复计数。
+        if (call.method === "credits.claimAll" && result?.ok !== false) {
+          await autoCheckin.noteManualClaim(call.payload?.provider, result?.value?.summary);
+        }
         return reply(rpcId, result);
       } catch (error) {
         const message3 = error instanceof Error ? error.message : String(error);

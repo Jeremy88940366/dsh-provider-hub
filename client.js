@@ -482,6 +482,7 @@ window.__ModuleLoader__.load({
         'chan.auto.title': '每日自动签到',
         'chan.auto.running': '签到进行中…',
         'chan.auto.ran': '今日已自动签到',
+        'chan.auto.partial': '今日签到未完成：{count} 个渠道待补签',
         'chan.auto.off': '今日尚未签到',
         'chan.auto.last': '上次结果：{result}',
         'nav.tab.aggregate': '聚合渠道',
@@ -1111,6 +1112,7 @@ window.__ModuleLoader__.load({
         'chan.auto.title': 'Daily auto check-in',
         'chan.auto.running': 'Check-in running…',
         'chan.auto.ran': 'Checked in today',
+        'chan.auto.partial': 'Check-in incomplete: {count} channel(s) pending',
         'chan.auto.off': 'Not checked in today',
         'chan.auto.last': 'Last result: {result}',
         'nav.tab.aggregate': 'Aggregate',
@@ -4026,6 +4028,7 @@ window.__ModuleLoader__.load({
           setNotice(failed.length > 0 ? claimed > 0 ? `${successText}；${failureText}` : failureText
             : claimed > 0 ? successText : t('chan.claim.none'))
           void loadCredits(); void loadBalances(true)
+          try { window.dispatchEvent(new CustomEvent('ofm:autocheckin')) } catch { /* no window */ }
         } catch (error) { onError(channel, error) } finally { claimPending.current = false; setBusy('') }
       }
 
@@ -4212,6 +4215,13 @@ window.__ModuleLoader__.load({
         try { const value = await rpc('usage.autoCheckin', {}, 30_000); setAuto(value?.autoCheckin ?? null) } catch { setAuto(null) }
       }, [available, rpc])
       useEffect(() => { void loadAuto() }, [loadAuto])
+      // 手动领取会改变「今日是否已签完」，而领取按钮在 ChannelCard 里、拿不到 setAuto，
+      // 所以用事件让页面重拉一次，免得徽章停在旧状态。
+      useEffect(() => {
+        const onManualClaim = () => { void loadAuto() }
+        window.addEventListener('ofm:autocheckin', onManualClaim)
+        return () => window.removeEventListener('ofm:autocheckin', onManualClaim)
+      }, [loadAuto])
       const toggleAuto = async () => {
         try { const value = await rpc('usage.autoCheckin', { enabled: auto?.enabled !== true }, 60_000); setAuto(value?.autoCheckin ?? null) } catch { /* the status refresh tells */ }
       }
@@ -4295,8 +4305,11 @@ window.__ModuleLoader__.load({
               h(Pill, null, `${t('chan.meta.accounts')} ${statuses === undefined ? '—' : CHANNEL_PROVIDERS.reduce((sum, row) => sum + (statuses[row.id]?.accounts?.enabled ?? 0), 0)}`))),
           auto == null ? null : h('div', { className: 'ofm_row' },
             h(Switch, { checked: auto.enabled === true, label: t('chan.auto.title'), onChange: () => void toggleAuto() }),
-            h(Pill, { tone: auto.running === true ? 'warn' : auto.ranToday === true ? 'ok' : '' },
-              auto.running === true ? t('chan.auto.running') : auto.ranToday === true ? t('chan.auto.ran') : t('chan.auto.off')),
+            h(Pill, { tone: auto.running === true ? 'warn' : auto.ranToday === true ? 'ok' : auto.partial === true ? 'warn' : '' },
+              auto.running === true ? t('chan.auto.running')
+                : auto.ranToday === true ? t('chan.auto.ran')
+                  : auto.partial === true ? t('chan.auto.partial').replace('{count}', String(auto.pendingCount ?? 0))
+                    : t('chan.auto.off')),
             typeof auto.lastResult === 'string' && auto.lastResult !== '' ? h('span', { className: 'ofm_note', title: auto.lastResult }, t('chan.auto.last').replace('{result}', auto.lastResult.length > 60 ? `${auto.lastResult.slice(0, 60)}…` : auto.lastResult)) : null)),
         failed ? h('div', { className: 'ofm_callout ofm_error' },
           h('div', null, t('chan.pack.failed').replace('{reason}', pack.error ?? ''), h('div', { className: 'ofm_note' }, t('chan.pack.hint')))) : null,
