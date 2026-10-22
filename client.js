@@ -45,6 +45,8 @@ window.__ModuleLoader__.load({
         loading: '正在加载…',
         loadFailed: '无法连接插件后端',
         retry: '重试',
+        'effects.enabled': '视觉特效',
+        'effects.hint': '控制背景光晕、毛玻璃和装饰动画；鱼缸和模型功能始终保留。',
         'state.available': '可用',
         'state.region-blocked': '地区受限',
         'state.unavailable': '暂不可用',
@@ -675,6 +677,8 @@ window.__ModuleLoader__.load({
         loading: 'Loading…',
         loadFailed: 'Cannot reach the plugin backend',
         retry: 'Retry',
+        'effects.enabled': 'Visual effects',
+        'effects.hint': 'Toggle background glow, glass blur and decorative motion. The aquarium and model features stay available.',
         'state.available': 'Available',
         'state.region-blocked': 'Region-limited',
         'state.unavailable': 'Unavailable',
@@ -1594,10 +1598,12 @@ window.__ModuleLoader__.load({
 .ofm_tab[data-on="true"]{color:var(--dsw-alias-label-primary)}
 .ofm_tab:hover{color:var(--dsw-alias-label-primary)}
 .ofm_tab .ofm_tabnum{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-tertiary);margin-left:6px;font-size:11px}
-.ofm_navspacer{display:none}
-/* The star belongs beside the brand: grid auto-placement would push it below
-   the tabs row (they come first in the DOM) and stretch it across the row. */
-.ofm_nav .ofm_starbtn{grid-column:2;grid-row:1;justify-self:end}
+/* The effects switch and the star share the nav's right cell: grid
+   auto-placement would push them below the tabs row (they come first in the
+   DOM) and stretch them across the row. */
+.ofm_nav .ofm_navtools{grid-column:2;grid-row:1;display:flex;align-items:center;justify-self:end;gap:12px;flex-wrap:wrap}
+.ofm_nav .ofm_navtools .ofm_switch{font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
+.ofm_nav .ofm_navtools .ofm_switch:hover{color:var(--dsw-alias-label-secondary)}
 .ofm_page{display:flex;flex-direction:column;gap:20px;animation:ofmpagein .4s cubic-bezier(.16,1,.3,1)}
 @keyframes ofmpagein{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 /* ── 毛玻璃表面：只给大块面用 backdrop-filter，小卡片用半透明叠层，滚动更顺 */
@@ -2161,6 +2167,37 @@ window.__ModuleLoader__.load({
 .ofm_snippet{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;padding:9px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:pre;overflow:auto;max-height:230px}
 @media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_picklist{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
 @media (prefers-reduced-motion:reduce){.ofm_rise,.ofm_page{animation:none}.ofm_pickrow,.ofm_member,.ofm_meter i,.ofm_card,.ofm_kpi,.ofm_chan{transition:none}.ofm_root .ofm_card:hover,.ofm_pickrow:hover:not(:disabled){transform:none}}
+
+/* ── 装饰特效开关与页面休眠 ────────────────────────────────────────────────
+   两件事，都只影响本机开销，不影响功能：
+
+   data-ofm-effects="off"（默认）：关掉背景光晕、毛玻璃、装饰性动画与过渡。
+   鱼缸用 :not(.ofm_tank) 排除在外，所以水波/气泡/鱼始终能动——它是数据展示，
+   不是装饰。纯布局用的 transform 也不动，否则弹层和滑块的定位会崩。
+
+   data-ofm-active="false"：页面被切到后台标签页或滚出视口时，全部动画暂停。
+   DSH 是常驻窗口，设置面板经常开着不看；一条 animation-play-state 比让
+   compositor 一直跑十几个无限循环动画便宜得多。 */
+.ofm_root[data-ofm-effects="off"]::before{content:none}
+.ofm_root[data-ofm-effects="off"],
+.ofm_root[data-ofm-effects="off"] :not(.ofm_tank):not(.ofm_tank *){
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;
+  animation:none!important;transition:none!important;will-change:auto!important;
+}
+.ofm_root[data-ofm-effects="off"] :not(.ofm_tank):not(.ofm_tank *)::before,
+.ofm_root[data-ofm-effects="off"] :not(.ofm_tank):not(.ofm_tank *)::after{
+  animation:none!important;transition:none!important;filter:none!important;
+}
+.ofm_root[data-ofm-effects="off"] :is(.ofm_nav,.ofm_panel,.ofm_hero,.ofm_glass){background:var(--dsw-alias-bg-layer-2)!important}
+.ofm_root[data-ofm-effects="off"] :not(.ofm_tank):not(.ofm_tank *):is(:hover,:active){transform:none!important}
+.ofm_root[data-ofm-effects="off"] :is(.ofm_btn,.ofm_starbtn)::after{content:none!important}
+.ofm_tank[data-ofm-motion="off"] *{animation-play-state:paused!important}
+.ofm_root[data-ofm-active="false"] *,
+.ofm_root[data-ofm-active="false"] *::before,
+.ofm_root[data-ofm-active="false"] *::after{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){
+  .ofm_root *,.ofm_root *::before,.ofm_root *::after{animation:none!important;transition:none!important}
+}
 
 `
 
@@ -2798,12 +2835,25 @@ window.__ModuleLoader__.load({
      */
     function Tank(props) {
       const { pct, level = 'ok', size, label } = props
+      // 空缸没有水，鱼和气泡就看不见，但三个无限循环动画还在跑；滚出视口同理。
+      // 两种情况下都挂 data-ofm-motion="off" 把 animation-play-state 停掉。
+      const filled = Number(pct) > 0
+      const tankRef = useRef(null)
+      const [visible, setVisible] = useState(true)
+      useEffect(() => {
+        if (!filled || typeof IntersectionObserver !== 'function' || !tankRef.current) return undefined
+        const observer = new IntersectionObserver(entries => setVisible(entries.some(entry => entry.isIntersecting)))
+        observer.observe(tankRef.current)
+        return () => observer.disconnect()
+      }, [filled])
       const fish = ['f1', 'f2', 'f3'].map(name => h('i', { className: `ofm_fish ${name}`, key: name },
         h('svg', { viewBox: '0 0 24 14' }, h('path', { d: FISH_PATH }))))
       const bubbles = ['b1', 'b2', 'b3', 'b4', 'b5'].map(name => h('i', { className: `ofm_bubble ${name}`, key: name }))
       if (pct === null || pct === undefined) return null
       return h('div', {
         className: `ofm_tank ${level}${size === 'xl' ? ' xl' : ''}`,
+        ref: tankRef,
+        'data-ofm-motion': filled && visible ? 'on' : 'off',
         role: 'img',
         'aria-label': label ?? `${pct}%`,
         style: { '--lvl': `${Math.max(0, Math.min(100, pct))}%` },
@@ -5796,6 +5846,7 @@ window.__ModuleLoader__.load({
     // The active page lives in localStorage so a reload — or the hot reload the
     // upgrader triggers — comes back to the page the user was reading.
     const TAB_KEY = 'ofm.tab'
+    const EFFECTS_KEY = 'ofm.visualEffects'
     const TABS = ['free', 'eac', 'channels', 'aggregate', 'saver', 'routing', 'ledger', 'logs', 'gateway', 'upgrade']
 
     function Shell(props) {
@@ -5806,6 +5857,29 @@ window.__ModuleLoader__.load({
           return TABS.includes(saved) ? saved : 'free'
         } catch { return 'free' }
       })
+      // 默认关闭：装饰特效是可选装饰，不是默认体验；用户开过一次就一直开着。
+      const [effects, setEffects] = useState(() => {
+        try { return window.localStorage?.getItem(EFFECTS_KEY) === 'on' } catch { return false }
+      })
+      const toggleEffects = () => setEffects(current => {
+        const next = !current
+        try { window.localStorage?.setItem(EFFECTS_KEY, next ? 'on' : 'off') } catch { /* 当前页面仍可切换 */ }
+        return next
+      })
+      // 页面被切到后台标签页或滚出视口时把动画全停掉。两个信号都要，缺一个就漏：
+      // 后台标签页仍算「在视口里」，而同一标签页内滚走时 document.hidden 是 false。
+      const shellRef = useRef(null)
+      const [active, setActive] = useState(true)
+      useEffect(() => {
+        let inViewport = true
+        const update = () => setActive(inViewport && document.hidden !== true)
+        update()
+        document.addEventListener?.('visibilitychange', update)
+        const observer = typeof IntersectionObserver === 'function' && shellRef.current
+          ? new IntersectionObserver(entries => { inViewport = entries.some(entry => entry.isIntersecting); update() }) : null
+        if (observer) observer.observe(shellRef.current)
+        return () => { document.removeEventListener?.('visibilitychange', update); observer?.disconnect() }
+      }, [])
       const tabRefs = useRef({})
       const [glider, setGlider] = useState({ left: 0, top: 0, width: 0, height: 0 })
       const [catalogBusy, setCatalogBusy] = useState(false)
@@ -5861,8 +5935,9 @@ window.__ModuleLoader__.load({
             ref: node => { tabRefs.current[id] = node },
             onClick: () => setTab(id),
           }, label, num === null ? null : h('span', { className: 'ofm_tabnum' }, String(num))))),
-        h('span', { className: 'ofm_navspacer' }),
-        h(StarButton, { t }))
+        h('div', { className: 'ofm_navtools', title: t('effects.hint') },
+          h(Switch, { checked: effects, label: t('effects.enabled'), onChange: toggleEffects }),
+          h(StarButton, { t })))
 
       const page = tab === 'channels'
         ? h(ChannelsPage, { t, ctx, summary })
@@ -5884,8 +5959,8 @@ window.__ModuleLoader__.load({
                       ? h(EacPage, { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
                       : h(FreePage, { t, data, counts, summary, stats, eacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
 
-      return h('div', { className: 'ofm_root ofm_shell' },
-        h('div', { className: 'ofm_aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
+      return h('div', { className: 'ofm_root ofm_shell', ref: shellRef, 'data-ofm-effects': effects ? 'on' : 'off', 'data-ofm-active': active ? 'true' : 'false' },
+        effects ? h('div', { className: 'ofm_aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')) : null,
         nav,
         page)
     }
@@ -6258,7 +6333,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'provider-hub'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth, DICT, useChannelRpc, Shell, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth, DICT, useChannelRpc, Shell, Tank, Switch, CSS }
     return module.exports
   },
 })

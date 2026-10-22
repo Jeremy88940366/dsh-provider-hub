@@ -47,6 +47,12 @@ CSS 类名前缀 `ofm_`（1501 处）**故意保留不改**——纯视觉，不
 5. **保留 WorkBuddy / CodeBuddy 渠道**：上游 2.5.8 以合规原因移除了这两个渠道，本分支保留，并补齐了直连路径的腾讯渠道内容指纹清洗（`vendor/channel-pack/pack.js` 的 `sanitizeTencentMessages`）。
 6. **移植上游 2.5.8 的三项更新机制改动**：更新失败重试（备份目录重命名重试 + 复用已校验暂存）、转发/网关保留 `reasoning_content`（含单个空格占位）、Qoder 思考档位按强度排序。
 7. **签名信任根换成自己的**：`feed/manifest.json` 用本仓库 `keys/manifest-ed25519-private.pem` 签名，公钥 pin 在 `src/updater.js` 的 `PINNED_MANIFEST_PUBLIC_KEY`。上游的清单在本仓库验不过（这是有意的）。
+8. **移植上游 main 的两个界面性能提交**（3.7.4，对应 `f0973303` 与 `f0e90532`）：
+   - 装饰特效开关：导航右侧新增 `Switch`，把选择写进 `localStorage` 的 `ofm.visualEffects`，根节点挂 `data-ofm-effects`。默认 **关闭**——光晕、毛玻璃、装饰动画都是可选装饰。`data-ofm-effects="off"` 的 CSS 用 `:not(.ofm_tank):not(.ofm_tank *)` 把鱼缸排除在外，所以水波/气泡/鱼不受影响；纯布局用的 `transform` 也不动。
+   - 页面休眠：根节点挂 `data-ofm-active`，由 `document.visibilitychange` 与 `IntersectionObserver` 共同驱动，任一条件为「不可见」就暂停全部动画。
+   - 鱼缸休眠：`Tank` 挂 `data-ofm-motion`，空缸（`pct` 为 0）或滚出视口时停掉三条无限循环动画，重新可见或有水量时恢复，卸载时 `disconnect()`。
+   - 上游这两处改的是 `useCountUp`/`RecoCard`/`PicksPage` 的调用点，本仓库没有推荐页，故未带过来；开关控件复用本仓库已有的 `Switch`（`client.js` 里原本就有 `ofm_switch` 样式）。
+   - 回归测试：`npm run test:ui`（`scripts/plugin-ui-test.mjs`，headless 渲染 `Tank` 与 `Shell`，9 条断言）。
 
 ## 发版
 
