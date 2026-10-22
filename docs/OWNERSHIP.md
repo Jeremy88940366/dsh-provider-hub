@@ -107,6 +107,24 @@ git add -A && git commit -m "x.y.z: ..." && git push
 printf 'protocol=https\nhost=github.com\nusername=Jeremy88940366\npassword=<新 token>\n\n' | git credential approve
 ```
 
+### 网络：必须走代理
+
+本机到 `github.com:443` **时通时不通**，而 `api.github.com`、`codeload.github.com`、`raw.githubusercontent.com` 一直正常 —— 所以「浏览器能打开 GitHub 页面」不代表能推。git 走的是 `github.com:443` 的 `git-receive-pack`，正好落在不通的那条路上。
+
+仓库 local config 已固定代理：
+
+```bash
+git config http.proxy http://127.0.0.1:7890
+git config https.proxy http://127.0.0.1:7890
+```
+
+系统代理（注册表 `ProxyEnable=1`、`ProxyServer=127.0.0.1:7890`）本来就是开的，但 git 不读 Windows 系统代理，必须单独配。
+
+代理没开时 `git push` 报 `Failed to connect to github.com:443`；`ship.mjs` 会区分「连不上」和「凭据被拒」，并提示提交已经在本地、网络恢复后直接 `git push` 即可。
+
+备选：`ssh.github.com:443` 这条 TCP 通路是稳定的（可作 SSH over 443 的退路，需要先生成密钥并加到 GitHub）。
+
+
 
 ## 数据目录
 
