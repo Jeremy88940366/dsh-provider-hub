@@ -1,7 +1,7 @@
 {
-  "version": "3.7.13",
+  "version": "3.7.14",
   "base": "../",
-  "publishedAt": "2026-10-22T18:13:42.568Z",
+  "publishedAt": "2026-10-22T18:24:26.429Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 481975,
-      "sha256": "dcb645ac20bbef0e2c667c251c5dc9c743ab4a42cc1aa985428aa990e4ea901c"
+      "size": 483680,
+      "sha256": "160af7f896093e9b16a0748899dc89307cc5bd8ea8cbf8f0dc6512ebdd6c65b2"
     },
     {
       "path": "cordis.patch.yml",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 3299,
-      "sha256": "826654c55700cb1c9f656c0d295facaff20d5e435c7c81e681a0c38467b5d028"
+      "sha256": "8fc66c60fb274190cf7590ece930e36b9a7df567b3f0f46d7a4ac44a7e54461a"
     },
     {
       "path": "src/adapter.js",
@@ -346,8 +346,8 @@
     },
     {
       "path": "src/upstream-track.js",
-      "size": 9904,
-      "sha256": "bcd8fb823bd07e99d54b75580abd4e7f43bf43822fcb36fa3cc201f21d9fa8f7"
+      "size": 13397,
+      "sha256": "de25ff054d84328c77a5a10b1b33fbf3a87f87c575b8be36b48c9d8e18cb89af"
     },
     {
       "path": "src/upstream.js",
@@ -395,5 +395,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "Yqg8e+3hgMfev+sHimc+9Mj2DNaaGD9ZU6fmicECGctMwKaryPGzDuGXImMBzHTRplWsUzRdxlyKUfnOdZw7DA=="
+  "signature": "Hlw2v4HVB38rxtpUYeGWT63oH9xZqdyyfhF+d1HgPuvC78UGW7b+wGYH86XI5H490d7jqRA2/4tVlU/P2w7GDg=="
 }

@@ -324,6 +324,8 @@ window.__ModuleLoader__.load({
         'upstream.checking': '检查中…',
         'upstream.mergeable': '要合并 {n} 个文件',
         'upstream.keepOurs': '保留本地 {n} 个',
+        'upstream.removed': '上游删了、我们保留 {n} 个',
+        'upstream.removedHint': '上游砍掉了这些渠道实现，合并时一律保留我们的版本 —— 保留它们正是这个 fork 存在的理由。',
         'upstream.skipped': '跳过 {n} 个',
         'upstream.files': '文件',
         'upstream.showFiles': '展开文件清单',
@@ -977,6 +979,8 @@ window.__ModuleLoader__.load({
         'upstream.checking': 'Checking…',
         'upstream.mergeable': '{n} file(s) to merge',
         'upstream.keepOurs': '{n} kept local',
+        'upstream.removed': '{n} removed upstream, kept here',
+        'upstream.removedHint': 'Upstream dropped these channel implementations. A merge always keeps our copies — keeping them is why this fork exists.',
         'upstream.skipped': '{n} skipped',
         'upstream.files': 'Files',
         'upstream.showFiles': 'Show file list',
@@ -3758,8 +3762,21 @@ window.__ModuleLoader__.load({
       }
       const data = state.data
       const behind = data?.behind?.length ?? 0
-      const counts = data?.counts ?? { mergeable: 0, keepOurs: 0, skipped: 0 }
-      const files = data?.files ?? { mergeable: [], keepOurs: [], skipped: [] }
+      // 宿主可能是升级前的旧版本（还没有 removed 这一组），所以每个字段都要有
+      // 自己的兜底 —— 不能只兜 files 整个对象，否则旧宿主返回的 files 里没有
+      // removed 时会读到 undefined.length。
+      const counts = data?.counts ?? {}
+      const fileGroups = data?.files ?? {}
+      const mergeableCount = counts.mergeable ?? 0
+      const keepOursCount = counts.keepOurs ?? 0
+      const removedCount = counts.removed ?? 0
+      const skippedCount = counts.skipped ?? 0
+      const files = {
+        mergeable: fileGroups.mergeable ?? [],
+        keepOurs: fileGroups.keepOurs ?? [],
+        removed: fileGroups.removed ?? [],
+        skipped: fileGroups.skipped ?? [],
+      }
       const unreleased = data?.unreleased ?? { aheadBy: 0, commits: [] }
       const stale = (state.error !== '' || data?.lastError !== '') && (data?.checkedAt ?? 0) > 0
       return h(Panel, { title: t('upstream.title'), hint: t('upstream.hint') },
@@ -3776,12 +3793,13 @@ window.__ModuleLoader__.load({
           h('li', { key: `${commit.sha}-${index}` }, h('code', null, commit.sha), ' ', commit.message))) : null,
         h('div', { className: 'ofm_row' },
           h(Button, { disabled: busy || state.status !== 'ready', onClick: check }, busy ? t('upstream.checking') : t('upstream.check')),
-          data?.updated === true && counts.mergeable > 0
-            ? h('span', { className: 'ofm_note' }, t('upstream.mergeable').replace('{n}', String(counts.mergeable)))
+          data?.updated === true && mergeableCount > 0
+            ? h('span', { className: 'ofm_note' }, t('upstream.mergeable').replace('{n}', String(mergeableCount)))
             : null,
-          counts.keepOurs > 0 ? h('span', { className: 'ofm_note' }, t('upstream.keepOurs').replace('{n}', String(counts.keepOurs))) : null,
-          counts.skipped > 0 ? h('span', { className: 'ofm_note' }, t('upstream.skipped').replace('{n}', String(counts.skipped))) : null,
-          counts.mergeable > 0
+          keepOursCount > 0 ? h('span', { className: 'ofm_note' }, t('upstream.keepOurs').replace('{n}', String(keepOursCount))) : null,
+          removedCount > 0 ? h('span', { className: 'ofm_note' }, t('upstream.removed').replace('{n}', String(removedCount))) : null,
+          skippedCount > 0 ? h('span', { className: 'ofm_note' }, t('upstream.skipped').replace('{n}', String(skippedCount))) : null,
+          mergeableCount > 0 || removedCount > 0
             ? h(Button, { onClick: () => setOpen(current => !current) }, open ? t('upstream.hideFiles') : t('upstream.showFiles'))
             : null),
         state.status === 'ready' && data?.updated === false ? h('p', { className: 'ofm_note' }, t('upstream.noUpdate')) : null,
@@ -3796,7 +3814,13 @@ window.__ModuleLoader__.load({
         files.keepOurs.length > 0 && open ? h('div', { className: 'ofm_sec', style: { gap: 4 } },
           h('span', { className: 'ofm_note' }, t('upstream.keepOurs').replace('{n}', String(files.keepOurs.length))),
           h('ul', { className: 'ofm_newsbody' }, ...files.keepOurs.map((file, index) =>
-            h('li', { key: `keep-${file.file}-${index}` }, file.file)))) : null)
+            h('li', { key: `keep-${file.file}-${index}` }, file.file)))) : null,
+        files.removed.length > 0 && open ? h('div', { className: 'ofm_sec', style: { gap: 4 } },
+          h('span', { className: 'ofm_note' }, t('upstream.removed').replace('{n}', String(files.removed.length))),
+          h('p', { className: 'ofm_note' }, t('upstream.removedHint')),
+          h('ul', { className: 'ofm_newsbody' }, ...files.removed.map((file, index) =>
+            h('li', { key: `removed-${file.file}-${index}` },
+              h('code', null, `-${String(file.deletions)}`), ' ', file.file)))) : null)
     }
 
     function UpgradePage(props) {

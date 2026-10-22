@@ -316,10 +316,11 @@ const upstreamStatus = (over = {}) => ({
   behind: ['v2.5.9'],
   updated: true,
   unreleased: { aheadBy: 2, commits: [{ sha: 'f097330', message: 'fix(界面)：视觉特效开关' }, { sha: 'f0e9053', message: 'fix(鱼缸)：暂停空缸' }] },
-  counts: { mergeable: 98, keepOurs: 3, skipped: 57 },
+  counts: { mergeable: 87, keepOurs: 3, removed: 11, skipped: 57 },
   files: {
     mergeable: [{ file: 'client.js', status: 'modified', additions: 74, deletions: 13 }],
     keepOurs: [{ file: 'package.json', status: 'modified', additions: 1, deletions: 1 }],
+    removed: [{ file: 'vendor/channel-pack/src/buddy.ts', status: 'removed', additions: 0, deletions: 931 }],
     skipped: [],
   },
   checkedAt: Date.now() - 120_000,
@@ -348,7 +349,7 @@ await check('UpstreamPanel reads the cached status instead of hitting GitHub', a
 })
 
 await check('UpstreamPanel reports in-sync without an "updated" claim', async () => {
-  const app = boot({ fetch: () => ({ body: upstreamStatus({ latestTag: 'v2.5.8', behind: [], updated: false, unreleased: { aheadBy: 0, commits: [] }, counts: { mergeable: 0, keepOurs: 0, skipped: 0 }, files: { mergeable: [], keepOurs: [], skipped: [] } }) }) })
+  const app = boot({ fetch: () => ({ body: upstreamStatus({ latestTag: 'v2.5.8', behind: [], updated: false, unreleased: { aheadBy: 0, commits: [] }, counts: { mergeable: 0, keepOurs: 0, removed: 0, skipped: 0 }, files: { mergeable: [], keepOurs: [], removed: [], skipped: [] } }) }) })
   app.draw(app.test.UpstreamPanel, { t: T })
   await settle()
   const text = textOf(app.draw(app.test.UpstreamPanel, { t: T }))
@@ -386,7 +387,7 @@ await check('UpstreamPanel keeps the last good result when a check fails', async
 })
 
 await check('UpstreamPanel survives a host that has never checked', async () => {
-  const app = boot({ fetch: () => ({ body: upstreamStatus({ latestTag: '', behind: [], updated: false, unreleased: { aheadBy: 0, commits: [] }, checkedAt: 0, counts: { mergeable: 0, keepOurs: 0, skipped: 0 }, files: { mergeable: [], keepOurs: [], skipped: [] } }) }) })
+  const app = boot({ fetch: () => ({ body: upstreamStatus({ latestTag: '', behind: [], updated: false, unreleased: { aheadBy: 0, commits: [] }, checkedAt: 0, counts: { mergeable: 0, keepOurs: 0, removed: 0, skipped: 0 }, files: { mergeable: [], keepOurs: [], removed: [], skipped: [] } }) }) })
   app.draw(app.test.UpstreamPanel, { t: T })
   await settle()
   const text = textOf(app.draw(app.test.UpstreamPanel, { t: T }))
@@ -408,10 +409,32 @@ await check('UpstreamPanel hides the file list until asked', async () => {
   assert.match(text, /74 \+/, 'per-file churn shown')
 })
 
+await check('UpstreamPanel lists what upstream deleted separately from work to merge', async () => {
+  // 上游 2.5.9 删掉了 11 个渠道文件（-5905 行）。它们不能被算进「要合并」——
+  // 合并脚本对这类文件一律 keep-local。数字虚高会让整件事看起来比实际重得多。
+  // 这里要看到真实的数字，所以 t() 保留 {n} 占位符（T 会把它整段吞掉）。
+  const t = key => `${key} {n}`
+  const app = boot({ fetch: () => ({ body: upstreamStatus() }) })
+  app.draw(app.test.UpstreamPanel, { t })
+  await settle()
+  let tree = app.draw(app.test.UpstreamPanel, { t })
+  const row = byClass(tree, 'ofm_row')
+  assert.doesNotMatch(textOf(row), /98/, 'the removed files are not folded into the merge count')
+  assert.match(textOf(row), /upstream\.mergeable 87/, '87 files really are mergeable')
+  assert.match(textOf(row), /upstream\.removed 11/, 'and the 11 deletions are their own badge')
+  const toggle = row.props.children.find(child => child?.props?.onClick && child.props.className === undefined && child.props.disabled === undefined)
+  toggle.props.onClick()
+  tree = app.draw(app.test.UpstreamPanel, { t })
+  const text = textOf(tree)
+  assert.match(text, /upstream\.removed/, 'a dedicated section for deleted-by-upstream files')
+  assert.match(text, /buddy\.ts/, 'the deleted file is named')
+  assert.match(text, /-931/, 'and its line count')
+})
+
 await check('upstream copy exists in both locales', () => {
   const app = boot()
   for (const locale of ['zh', 'en']) {
-    for (const key of ['upstream.title', 'upstream.hint', 'upstream.baseline', 'upstream.latest', 'upstream.synced', 'upstream.behind', 'upstream.unreleased', 'upstream.never', 'upstream.check', 'upstream.checking', 'upstream.mergeable', 'upstream.keepOurs', 'upstream.skipped', 'upstream.files', 'upstream.showFiles', 'upstream.hideFiles', 'upstream.failed', 'upstream.stale', 'upstream.noUpdate']) {
+    for (const key of ['upstream.title', 'upstream.hint', 'upstream.baseline', 'upstream.latest', 'upstream.synced', 'upstream.behind', 'upstream.unreleased', 'upstream.never', 'upstream.check', 'upstream.checking', 'upstream.mergeable', 'upstream.keepOurs', 'upstream.removed', 'upstream.removedHint', 'upstream.skipped', 'upstream.files', 'upstream.showFiles', 'upstream.hideFiles', 'upstream.failed', 'upstream.stale', 'upstream.noUpdate']) {
       assert.equal(typeof app.test.DICT[locale][key], 'string', `${locale} ${key}`)
     }
   }

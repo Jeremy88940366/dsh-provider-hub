@@ -18,9 +18,13 @@ npm run upstream:json           # 给脚本用
 node scripts/check-upstream.mjs --quiet   # 只在有更新时输出，退出码 1 = 有更新
 ```
 
-它走 `api.github.com`，列出上游最新 tag、`main` 上未发版的提交、以及从我们的基线到最新版之间的**文件级**改动，并按下面的 SKIP_PATHS / KEEP_OURS 分成「要合并 / 保留本地 / 已跳过」三组。插件界面里同一个结论显示在「升级」页底部的「上游 OFM 同步状态」面板，跟着 `updateCheckHours` 的节奏自动刷新，也可以按「检查上游」立刻查一次。
+它走 `api.github.com`，列出上游最新 tag、`main` 上未发版的提交、以及从我们的基线到最新版之间的**文件级**改动，并按下面的 SKIP_PATHS / KEEP_OURS 分成「要合并 / 保留本地 / 上游删了但我们保留 / 已跳过」四组。插件界面里同一个结论显示在「升级」页底部的「上游 OFM 同步状态」面板，跟着 `updateCheckHours` 的节奏自动刷新，也可以按「检查上游」立刻查一次。
 
 > 为什么不用 `git fetch upstream`：那条路走 `github.com:443`，代理一关就断。`api.github.com` 是直连的。
+
+> **第四组为什么单独列**：上游 2.5.9 砍掉了 buddy/workbuddy/codearts 共 11 个文件（-5905 行）。它们确实出现在 diff 里，但 `sync-upstream.mjs` 对「上游删了、我们还有」的处理一律是 keep-local，永远不会合并 —— 算进「要合并」会让待办虚高，而且虚高的正是行数最大的那些，看着像有大工程要做。
+
+> **额度**：匿名调用只有 60 次/小时，一次检查要 2~3 个请求，加上开机一次、定时一次、再手点几次就撞 403。本机的 `~/.dsh/tools/gh/.tok` 会被自动拿去用（5000 次/小时）；也可用环境变量 `GITHUB_TOKEN` / `GH_TOKEN`，或在仓库放 `.upstream-token`（已在 `.gitignore` 里）。读公开仓库不需要任何 scope。
 
 确认有更新后再同步：
 
@@ -69,7 +73,7 @@ CSS 类名前缀 `ofm_`（1501 处）**故意保留不改**——纯视觉，不
    - 鱼缸休眠：`Tank` 挂 `data-ofm-motion`，空缸（`pct` 为 0）或滚出视口时停掉三条无限循环动画，重新可见或有水量时恢复，卸载时 `disconnect()`。
    - 上游这两处改的是 `useCountUp`/`RecoCard`/`PicksPage` 的调用点，本仓库没有推荐页，故未带过来；开关控件复用本仓库已有的 `Switch`（`client.js` 里原本就有 `ofm_switch` 样式）。
    - 回归测试：`npm run test:ui`（`scripts/plugin-ui-test.mjs`，headless 渲染 `Tank` 与 `Shell`，9 条断言）。
-9. **上游版本追踪**（3.7.13）：`src/upstream-track.js` 走 `api.github.com` 查上游最新 tag、`main` 未发版提交与基线间的文件级差异，结果落 `upstream-state.json`；界面在「升级」页底部显示（`UpstreamPanel`），另有 `npm run upstream:check` 的 CLI 版本。判定逻辑只有 `summarizeUpstream()` 一处，CLI 与界面共用。回归测试：`npm run test:upstream`。
+9. **上游版本追踪**（3.7.13，3.7.14 修正）：`src/upstream-track.js` 走 `api.github.com` 查上游最新 tag、`main` 未发版提交与基线间的文件级差异，结果落 `upstream-state.json`；界面在「升级」页底部显示（`UpstreamPanel`），另有 `npm run upstream:check` 的 CLI 版本。判定逻辑只有 `summarizeUpstream()` 一处，CLI 与界面共用。3.7.14 补两件事：一是自动带 GitHub token（`readUpstreamToken`，匿名 60 次/小时撑不住），额度耗尽时报「还剩几分钟恢复」而不是干巴巴的 `HTTP 403`；二是把「上游删了、我们保留」从「要合并」里拆出来单独一组（见上）。回归测试：`npm run test:upstream`、`npm run test:ui`。
 
 ## 发版
 

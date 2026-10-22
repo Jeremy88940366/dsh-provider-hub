@@ -13,8 +13,14 @@
  *
  * 不自动轮询上游：这件事的答案以天为单位变化，按 updateCheckHours 的节奏顺带
  * 查一次就够（见 index.js 里的 every()）。
+ *
+ * 关于凭据：匿名调用只有 60 次/小时，而一次 check 要 2~3 个请求，加上开机和定时
+ * 各查一次、面板上还手点 —— 很快就会撞 403 `API rate limit exceeded`。带 token 是
+ * 5000 次/小时。所以下面会尽力找一个 token（见 readUpstreamToken），找不到才退回
+ * 匿名。
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 export const UPSTREAM_REPO = 'Ebony-Vinyl/dsh-our-free-model'
@@ -105,8 +111,17 @@ export function summarizeUpstream({ baseline, tags, compareMain, compareRange })
     additions: file.additions ?? 0,
     deletions: file.deletions ?? 0,
   }))
-  const mergeable = files.filter(file => !isSkipped(file.file) && !isKept(file.file))
-  const keepOurs = files.filter(file => !isSkipped(file.file) && isKept(file.file))
+  const live = files.filter(file => !isSkipped(file.file))
+  // 上游删掉的文件单独归一组。
+  //
+  // 这一组最容易数错：它们确实出现在 diff 里，但 `sync-upstream.mjs` 对「上游删了
+  // 而我们还有」的处理是 keep-local / 跳过，永远不会合并。算进「要合并 N 个文件」
+  // 就会让 N 虚高 —— 而且虚高的正是行数最大的那些（上游 2.5.9 删掉的 11 个渠道文件
+  // 共 -5905 行），一眼看去像是有大工程要做。
+  const removed = live.filter(file => file.status === 'removed')
+  const remaining = live.filter(file => file.status !== 'removed')
+  const mergeable = remaining.filter(file => !isKept(file.file))
+  const keepOurs = remaining.filter(file => isKept(file.file))
   const skipped = files.filter(file => isSkipped(file.file))
 
   return {
@@ -115,9 +130,52 @@ export function summarizeUpstream({ baseline, tags, compareMain, compareRange })
     behind,
     updated: behind.length > 0 || unreleased.aheadBy > 0,
     unreleased,
-    counts: { mergeable: mergeable.length, keepOurs: keepOurs.length, skipped: skipped.length },
-    files: { mergeable, keepOurs, skipped },
+    counts: {
+      mergeable: mergeable.length,
+      keepOurs: keepOurs.length,
+      removed: removed.length,
+      skipped: skipped.length,
+    },
+    files: { mergeable, keepOurs, removed, skipped },
   }
+}
+
+/**
+ * 找一个 GitHub token。
+ *
+ * 只为把额度从 60 次/小时提到 5000 次/小时 —— 读公开仓库不需要任何权限，
+ * 所以这里只认「已经在本机上的」凭据，不弹窗、不引导用户去申请。
+ *
+ * 顺序：
+ *   1. 环境变量 GITHUB_TOKEN / GH_TOKEN（CI 与临时覆盖用）
+ *   2. ~/.dsh/tools/gh/.tok（本机 gh 的令牌，内容就是裸 token）
+ *   3. <pkgDir>/.upstream-token（仓库自带的，已在 .gitignore 里）
+ *
+ * 读不到就返回 ''，调用方退回匿名。
+ *
+ * @param {string} pkgDir
+ * @param {{homedir?: string, env?: Record<string, string | undefined>}} [options]
+ * @returns {string}
+ */
+export function readUpstreamToken(pkgDir, { homedir = os.homedir(), env = process.env } = {}) {
+  const fromEnv = env.GITHUB_TOKEN || env.GH_TOKEN
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') return fromEnv.trim()
+
+  const candidates = [
+    path.join(homedir, '.dsh', 'tools', 'gh', '.tok'),
+    path.join(pkgDir, '.upstream-token'),
+  ]
+  for (const file of candidates) {
+    try {
+      const value = fs.readFileSync(file, 'utf8').trim()
+      // 只要形似令牌的内容：gho_/ghp_/github_pat_ 前缀，或至少 20 位的裸串。
+      // 文件存在但内容不是令牌（比如被写成了说明文字）时不该发出去当 Authorization。
+      if (/^(gh[opusr]_|github_pat_)/.test(value) || /^[A-Za-z0-9_]{20,}$/.test(value)) return value
+    } catch {
+      /* 没有这个文件是正常情况 */
+    }
+  }
+  return ''
 }
 
 const STATE_VERSION = 1
@@ -136,9 +194,10 @@ export class UpstreamTracker {
    * @param {typeof fetch} [deps.fetchImpl]
    * @param {(message: string) => void} [deps.log]
    * @param {string} [deps.repo]
+   * @param {string} [deps.token] - GitHub token；缺省时按 readUpstreamToken 现找
    */
-  constructor({ pkgDir, dataDir, fetchImpl = fetch, log = () => {}, repo = UPSTREAM_REPO }) {
-    this.deps = { pkgDir, dataDir, fetchImpl, log, repo }
+  constructor({ pkgDir, dataDir, fetchImpl = fetch, log = () => {}, repo = UPSTREAM_REPO, token }) {
+    this.deps = { pkgDir, dataDir, fetchImpl, log, repo, token }
     this.state = this.load()
     this.checking = false
   }
@@ -188,8 +247,8 @@ export class UpstreamTracker {
       behind: lastOk?.behind ?? [],
       updated: lastOk?.updated === true,
       unreleased: lastOk?.unreleased ?? { aheadBy: 0, commits: [] },
-      counts: lastOk?.counts ?? { mergeable: 0, keepOurs: 0, skipped: 0 },
-      files: lastOk?.files ?? { mergeable: [], keepOurs: [], skipped: [] },
+      counts: lastOk?.counts ?? { mergeable: 0, keepOurs: 0, removed: 0, skipped: 0 },
+      files: lastOk?.files ?? { mergeable: [], keepOurs: [], removed: [], skipped: [] },
       checkedAt: lastOk?.checkedAt ?? 0,
     }
   }
@@ -208,20 +267,29 @@ export class UpstreamTracker {
     this.checking = true
     this.state.lastAttempt = Date.now()
     const baseline = readBaseline(this.deps.pkgDir)
+    const token = this.deps.token ?? readUpstreamToken(this.deps.pkgDir)
     try {
       const request = async url => {
-        const response = await this.deps.fetchImpl(url, {
-          redirect: 'error',
-          signal,
-          headers: {
-            accept: 'application/vnd.github+json',
-            'user-agent': 'provider-hub-upstream-check',
-          },
-        })
+        const headers = {
+          accept: 'application/vnd.github+json',
+          'user-agent': 'provider-hub-upstream-check',
+        }
+        if (token !== '') headers.authorization = `Bearer ${token}`
+        const response = await this.deps.fetchImpl(url, { redirect: 'error', signal, headers })
         if (!response.ok) {
           const remaining = response.headers?.get?.('x-ratelimit-remaining')
+          const reset = Number(response.headers?.get?.('x-ratelimit-reset'))
           const limited = response.status === 429 || (response.status === 403 && remaining === '0')
-          throw new Error(`HTTP ${response.status}${limited ? '; GitHub API rate limit exceeded' : ''}`)
+          if (!limited) throw new Error(`HTTP ${response.status}`)
+          // 匿名 60 次/小时，带 token 5000 次/小时。额度耗尽时把「什么时候恢复」
+          // 和「现在是不是匿名」都说清楚 —— 只说 rate limit exceeded 会让人以为
+          // 是上游或插件坏了。
+          const wait = Number.isFinite(reset) && reset > 0
+            ? `，${Math.max(1, Math.ceil((reset * 1000 - Date.now()) / 60_000))} 分钟后恢复`
+            : ''
+          throw new Error(token === ''
+            ? `GitHub API 匿名额度已用尽（60 次/小时）${wait}；配置 token 可提到 5000 次/小时`
+            : `GitHub API 额度已用尽（token）${wait}`)
         }
         return response.json()
       }

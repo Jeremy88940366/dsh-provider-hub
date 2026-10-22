@@ -20,7 +20,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { UpstreamTracker, readBaseline, summarizeUpstream, validUpstreamTag, compareUpstreamTags, UPSTREAM_REPO } from '../src/upstream-track.js'
+import { UpstreamTracker, readBaseline, readUpstreamToken, summarizeUpstream, validUpstreamTag, compareUpstreamTags, UPSTREAM_REPO } from '../src/upstream-track.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -38,19 +38,9 @@ const proxyUrl = (() => {
   }
 })()
 
-// 令牌能免掉匿名限流（60 次/小时 → 5000）。有就用，没有也能跑。
-const token = (() => {
-  const home = process.env.USERPROFILE ?? process.env.HOME ?? ''
-  for (const file of [path.join(home, '.dsh', 'tools', 'gh', '.tok'), path.join(ROOT, '.upstream-token')]) {
-    try {
-      const value = fs.readFileSync(file, 'utf8').trim()
-      if (value !== '') return value
-    } catch {
-      /* 试下一个 */
-    }
-  }
-  return ''
-})()
+// 令牌能免掉匿名限流（60 次/小时 → 5000）。查找顺序与插件里完全一致，
+// 免得「命令行说能用、界面说超限」这种自相矛盾。
+const token = readUpstreamToken(ROOT)
 
 const fetchImpl = async (url, init) => {
   const options = {
@@ -151,6 +141,16 @@ if (status.files.mergeable.length > 0) {
 if (status.files.keepOurs.length > 0) {
   console.log(`\n会提示但保留本地版本（${status.files.keepOurs.length} 个，见 KEEP_OURS）：`)
   for (const c of status.files.keepOurs) console.log(`  ${c.status.padEnd(9)} ${stat(c)}  ${c.file}`)
+}
+
+// 上游删了、我们保留的文件。它们不在「要合并」里 —— sync-upstream.mjs 对这类
+// 情况一律 keep-local，永远不会改我们。单列出来是为了让人一眼看出「上游砍掉了
+// 这些渠道」，而不是把它们当成待办。
+if (status.files.removed.length > 0) {
+  const lines = status.files.removed.reduce((sum, c) => sum + c.deletions, 0)
+  console.log(`\n上游删除了、我们保留（${status.files.removed.length} 个文件，-${lines} 行）：`)
+  for (const c of status.files.removed) console.log(`  ${stat(c)}  ${c.file}`)
+  console.log('  （这一组不会自动合并 —— 保留它们正是这个 fork 存在的理由）')
 }
 
 if (status.files.skipped.length > 0) {

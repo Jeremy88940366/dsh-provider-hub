@@ -20,6 +20,7 @@ import {
   isSkipped,
   isKept,
   readBaseline,
+  readUpstreamToken,
   summarizeUpstream,
   UpstreamTracker,
 } from '../src/upstream-track.js'
@@ -96,10 +97,34 @@ await check('summarizeUpstream splits files into merge/keep/skip', () => {
   assert.equal(summary.latestTag, 'v2.5.9', 'the unofficial mac build is ignored')
   assert.deepEqual(summary.behind, ['v2.5.9'])
   assert.equal(summary.updated, true)
-  assert.deepEqual(summary.counts, { mergeable: 1, keepOurs: 1, skipped: 2 })
+  assert.deepEqual(summary.counts, { mergeable: 1, keepOurs: 1, removed: 0, skipped: 2 })
   assert.deepEqual(summary.files.mergeable.map(file => file.file), ['client.js'])
   assert.deepEqual(summary.files.keepOurs.map(file => file.file), ['package.json'])
   assert.deepEqual(summary.unreleased.commits, [{ sha: 'f097330', message: 'fix(界面)：特效开关' }], 'sha shortened, message first line only')
+})
+
+await check('files the upstream deleted are not counted as work to merge', () => {
+  // 上游 2.5.9 删掉了 11 个渠道文件（-5905 行）。它们出现在 diff 里，但
+  // sync-upstream.mjs 对「上游删了、我们还有」一律 keep-local，永远不会合并 ——
+  // 算进 mergeable 会让待办虚高，而且虚高的正是行数最大的那些。
+  const summary = summarizeUpstream({
+    baseline: 'v2.5.8',
+    tags: tagsFixture,
+    compareRange: {
+      files: [
+        { filename: 'client.js', status: 'modified', additions: 1, deletions: 1 },
+        { filename: 'vendor/channel-pack/src/buddy.ts', status: 'removed', additions: 0, deletions: 931 },
+        { filename: 'package.json', status: 'removed', additions: 0, deletions: 2 },
+        { filename: 'docs/gone.md', status: 'removed', additions: 0, deletions: 4 },
+      ],
+    },
+  })
+  assert.deepEqual(summary.counts, { mergeable: 1, keepOurs: 0, removed: 2, skipped: 1 })
+  assert.deepEqual(summary.files.removed.map(file => file.file), [
+    'vendor/channel-pack/src/buddy.ts',
+    'package.json',
+  ], 'KEEP_OURS files that upstream deleted still land in removed, not keepOurs')
+  assert.deepEqual(summary.files.mergeable.map(file => file.file), ['client.js'])
 })
 
 await check('summarizeUpstream counts unreleased main commits as an update', () => {
@@ -254,6 +279,71 @@ await check('readBaseline falls back when sync-base.json is absent or invalid', 
 await check('the real sync-base.json points at a valid version', () => {
   const baseline = readBaseline(new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
   assert.equal(validUpstreamTag(baseline), true, `baseline ${baseline} is not a vX.Y.Z tag`)
+})
+
+// ── token & rate limit ──────────────────────────────────────────────────────
+
+await check('readUpstreamToken prefers the env var and rejects junk files', () => {
+  const pkgDir = tempDir()
+  const emptyHome = tempDir()
+  const read = (extra = {}) => readUpstreamToken(pkgDir, { homedir: emptyHome, env: {}, ...extra })
+  try {
+    assert.equal(read(), '', 'nothing configured anywhere')
+
+    // A file that exists but holds prose must not become an Authorization header.
+    fs.writeFileSync(path.join(pkgDir, '.upstream-token'), '把 token 放这里\n')
+    assert.equal(read(), '')
+
+    fs.writeFileSync(path.join(pkgDir, '.upstream-token'), 'github_pat_11ABCDEFG0123456789\n')
+    assert.equal(read(), 'github_pat_11ABCDEFG0123456789', 'trailing newline trimmed')
+
+    // The gh token file lives in the home directory; env still wins over both.
+    fs.mkdirSync(path.join(emptyHome, '.dsh', 'tools', 'gh'), { recursive: true })
+    fs.writeFileSync(path.join(emptyHome, '.dsh', 'tools', 'gh', '.tok'), 'gho_home0000000000000000000000000000\n')
+    assert.equal(read(), 'gho_home0000000000000000000000000000', 'home token beats the repo file')
+    assert.equal(read({ env: { GITHUB_TOKEN: 'ghp_envwins000000000000000000000000' } }), 'ghp_envwins000000000000000000000000', 'env wins')
+  } finally {
+    fs.rmSync(pkgDir, { recursive: true, force: true })
+    fs.rmSync(emptyHome, { recursive: true, force: true })
+  }
+})
+
+await check('an exhausted quota names the limit and when it resets', async () => {
+  const dataDir = tempDir()
+  const pkgDir = tempDir()
+  const resetAt = Math.floor(Date.now() / 1000) + 600 // 10 minutes out
+  const exhausted = async () => ({
+    ok: false,
+    status: 403,
+    headers: { get: name => (name === 'x-ratelimit-remaining' ? '0' : name === 'x-ratelimit-reset' ? String(resetAt) : null) },
+    json: async () => ({}),
+  })
+
+  // Anonymous: the message must say how to get out of it.
+  const anonymous = new UpstreamTracker({ pkgDir, dataDir, fetchImpl: exhausted, token: '' })
+  await assert.rejects(() => anonymous.check(), error => {
+    assert.match(error.message, /匿名额度已用尽/)
+    assert.match(error.message, /60 次\/小时/)
+    assert.match(error.message, /10 分钟后恢复/)
+    assert.match(error.message, /token/)
+    return true
+  })
+
+  // With a token the advice is wrong, so it must not be repeated.
+  const withToken = new UpstreamTracker({ pkgDir, dataDir, fetchImpl: exhausted, token: 'ghp_x' })
+  await assert.rejects(() => withToken.check(), error => {
+    assert.match(error.message, /额度已用尽/)
+    assert.doesNotMatch(error.message, /匿名/, 'a token holder is not anonymous')
+    return true
+  })
+
+  // A plain 403 (no quota headers) is a different failure and must not be
+  // dressed up as rate limiting.
+  const plain403 = async () => ({ ok: false, status: 403, headers: { get: () => null }, json: async () => ({}) })
+  await assert.rejects(() => new UpstreamTracker({ pkgDir, dataDir, fetchImpl: plain403, token: '' }).check(), /^Error: HTTP 403$/)
+
+  fs.rmSync(dataDir, { recursive: true, force: true })
+  fs.rmSync(pkgDir, { recursive: true, force: true })
 })
 
 console.log(`\n${checks} checks passed`)
