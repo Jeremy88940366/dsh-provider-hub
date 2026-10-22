@@ -1,6 +1,6 @@
 {
   "name": "dsh-provider-hub",
-  "version": "3.7.8",
+  "version": "3.7.9",
   "private": true,
   "type": "module",
   "description": "DSH 插件：本地模型渠道聚合与转发（个人维护分支）。提供匿名免费车道、账号渠道登录与账号池、积分领取、本地 OpenAI 网关、局域网转发、数据看板与运行日志。",
