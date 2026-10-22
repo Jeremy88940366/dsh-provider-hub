@@ -56,11 +56,35 @@ CSS 类名前缀 `ofm_`（1501 处）**故意保留不改**——纯视觉，不
 
 ## 发版
 
+一条命令：
+
 ```bash
-# 1. 改 package.json 的 version
-# 2. 重签清单（会校验文件树与签名）
+npm run ship -- "3.7.5: 改了什么"
+```
+
+它按顺序做三件事，任一步失败就停在那里，不会留下半成品：
+
+1. **改版本号** —— patch 位自动 +1。要跳 minor/major，自己改好 `package.json` 再走 `--no-bump`。
+2. **重签清单** —— 调 `scripts/sign-release.mjs`。文件树和版本号都没变时会跳过（否则 `publishedAt` 每次都变，空改动也会产生一个只有时间戳差异的提交）。
+3. **提交 + 推送** —— `git add -A`、`commit`、`push origin main`。
+
+常用变体：
+
+```bash
+npm run ship -- --dry-run "..."    # 只跑到提交为止，不推送
+npm run ship -- --no-bump "..."    # 版本号已经改好了
+npm run ship -- --notes notes.md "..."  # 发布说明写进清单的 notes 字段
+npm run sign:check                 # 只检查现有清单与文件树是否一致
+```
+
+发版前的检查（任一不满足即中止，避免把仓库搞成半发状态）：当前必须是 `main` 分支、没有 rebase/merge/cherry-pick 残留、`user.name` 与 `user.email` 已配置。
+
+**为什么必须重签**：`feed/manifest.json` 里每个文件的 sha256 是自更新通道的校验依据。只 `git push` 不重签，push 会成功，但别的机器拉更新时逐文件校验对不上，整次更新被静默拒收 —— 不报错，只在安装端日志里留一行校验失败。`ship.mjs` 就是把这个坑堵死。
+
+### 手动发版（脚本坏掉时的退路）
+
+```bash
 node scripts/sign-release.mjs --notes "这一版改了什么"
-# 3. 提交推送
 git add -A && git commit -m "x.y.z: ..." && git push
 ```
 
@@ -68,13 +92,36 @@ git add -A && git commit -m "x.y.z: ..." && git push
 
 - 展开 `package.json` 的 `files[]` 白名单（目录递归，跳过点文件），自动补 `package.json`；
 - 逐文件算 sha256，超过 80 文件或单文件超 4 MiB 直接报错；
-- 用 `scripts/sign-release.mjs` 默认私钥（`~/.dsh/provider-hub/keys/manifest-ed25519-private.pem`，可用 `--key` 或 `$HUB_MANIFEST_KEY` 覆盖）签名；
+- 用默认私钥（`~/.dsh/provider-hub/keys/manifest-ed25519-private.pem`，可用 `--key` 或 `$HUB_MANIFEST_KEY` 覆盖）签名；
 - **签名前先走一遍安装端的解析路径**（`parseManifest` → `verifyManifestSignature`），落盘后再回读复验，任一步失败即退出非零。
 
 ⚠️ 签名端和验证端的载荷必须一致：`parseManifest` 会把 `publishedAt` 从 ISO 字符串归一成毫秒数，所以必须**先归一化再签**（脚本里已处理，改脚本时别破坏这一点）。
 
+### 推送凭据
+
+仓库的 local config 指向 `credential.helper = store --file=C:/Users/Administrator/.dsh/provider-hub/git-credentials`，token 存在仓库**外面**（`*.pem` 之外也没进版本库）。全局配置里的 `gh auth git-credential` 用不了 —— 那个 token 缺 `read:org` scope，`gh` 拒绝加载。
+
+凭据失效时（token 过期/撤销）：
+
+```bash
+printf 'protocol=https\nhost=github.com\nusername=Jeremy88940366\npassword=<新 token>\n\n' | git credential approve
+```
+
+
 ## 数据目录
 
-`~/.dsh/provider-hub/`：`settings.json`、`stats.json`、`catalog.json`、`availability.json`、`feed.json`、`keys/`。
+`~/.dsh/provider-hub/`：`settings.json`、`stats.json`、`catalog.json`、`availability.json`、`feed.json`、`keys/`、`git-credentials`（推送凭据，不属插件数据）。
 
 渠道账号与凭据不在这个目录里：账号在 `~/.dsh/channel-pack/state.json`，凭据在 `~/.dsh/.credentials.yaml`。
+
+## 本机生效
+
+本机 DSH 用 `file:../../src/dsh-provider-hub` 引入这个仓库，而 pnpm 对 `file:` 依赖是**拷贝**不是软链 —— 改完源文件必须手动同步，否则运行的是旧代码：
+
+```bash
+cp client.js index.js package.json \
+   ~/.dsh/profiles/desktop/node_modules/dsh-provider-hub/
+```
+
+客户端 bundle（`client.js`）不需要重启应用：`dsh-client-modules` 按文件 mtime/size 算 revision，刷新页面就会重读。改动 `index.js`（主进程侧）才需要重启。
+
