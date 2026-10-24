@@ -60432,7 +60432,10 @@ function isUnsupportedCheckin(message2) {
   return message2.includes("\u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230") || message2.includes("unsupported provider");
 }
 function isAutoCheckinExcluded(provider) {
-  return provider === ZCODE.id;
+  // LobsterAI 的上游封了账号（用户实测被封），渠道已整体摘除；账号条目可能
+  // 还留在 state.json 里（不删是为了保留历史凭据），但签到循环不能再打它 ——
+  // `listProviderIds` 取自 `pool.listAllAccounts()`，那个列表不看 enabled。
+  return provider === ZCODE.id || provider === LOBSTERAI.id;
 }
 function describeRun(totals) {
   const parts = [];
@@ -60978,7 +60981,7 @@ function providerIdsOf(llm, modelAdapters) {
   const keys = Object.keys(modelAdapters ?? {});
   return keys.length > 0 ? keys.map((id) => ({ id })) : void 0;
 }
-function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
+function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
   ctx.inject(["connection"], (connectionCtx) => {
     registerChannelPackEndpoints(
       connectionCtx,
@@ -60986,7 +60989,6 @@ function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, lobsterai
       codearts,
       buddy,
       workbuddy,
-      lobsterai,
       qoder,
       qoderCn,
       trae,
@@ -61020,7 +61022,7 @@ async function fullCatalogIds(ctx, modelAdapters, provider) {
     return { error: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` };
   }
 }
-function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
+function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
   const connection = ctx.connection ?? ctx.get("connection");
   if (!connection || typeof connection.fetch?.register !== "function") {
     ctx.logger.warn("[channel-pack] connection.fetch not available, RPC endpoints not registered");
@@ -61285,32 +61287,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background codearts login failed for ${id}: ${String(error)}`);
-            void pool.removeAccount(id).catch(() => {
-            });
-          });
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
-        } else if (provider === LOBSTERAI.id) {
-          const started = await lobsterai.startLogin({ refName });
-          await pool.addAccount({
-            id,
-            provider: LOBSTERAI.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
-          started.result.then(async (loginResult) => {
-            const credential = parseLobsteraiCredential(loginResult.access);
-            await pool.updateAccount(id, {
-              // ⚠️ 用 `lobsteraiDisplayNickname`：服务端把**手机号本身**当昵称
-              // 下发且只脱敏到「露末 4 位」，需归一化为末 2 位（用户要求）。
-              nickname: lobsteraiDisplayNickname(credential, id),
-              expiresAt: credential !== void 0 ? lobsteraiCredentialExpiresAtMs(credential) : void 0,
-              refreshable: credential !== void 0 && isLobsteraiRefreshable(credential)
-            });
-          }).catch((error) => {
-            ctx.logger.warn(`[channel-pack] background ${LOBSTERAI.id} login failed for ${id}: ${String(error)}`);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -61666,9 +61642,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               break;
             case "workbuddy":
               await workbuddy.refreshAccountCredential(entry.credentialRef, pool, entry.id);
-              break;
-            case LOBSTERAI.id:
-              await lobsterai.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
             case QODER.id:
             case QODER_CN.id:
@@ -62055,15 +62028,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             }
           };
         }
-        if (req.provider === LOBSTERAI.id) {
-          const accounts2 = await pool.listAccounts(req.provider);
-          return {
-            ok: true,
-            value: {
-              accounts: accounts2.map((entry) => ({ accountId: entry.id, nickname: entry.nickname, status: null }))
-            }
-          };
-        }
         if (req.provider === TRAE.id) {
           const accounts2 = await pool.listAccounts(req.provider);
           return {
@@ -62133,17 +62097,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           const value2 = await collectClaimResults(accounts, void 0, {
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: (credential) => claimCodeArtsDailyCheckin(credential, codeartsFetcher),
-            precheckStatus: false,
-            warn: (msg) => ctx.logger?.warn?.(msg)
-          });
-          return { ok: true, value: value2 };
-        }
-        if (req.provider === LOBSTERAI.id) {
-          const clientVersion = await lobsterai.resolveClientVersion();
-          const value2 = await collectClaimResults(accounts, LOBSTERAI, {
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            claim: (credential, product2) => claimLobsteraiDailyCheckin(credential, product2, clientVersion),
-            // 领取流程内部已做 slot/context 预检，不需要外部再查一次状态。
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg)
           });
@@ -62312,20 +62265,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             warn: (msg) => ctx.logger?.warn?.(msg)
           });
           return { ok: true, value: { accounts: values2 } };
-        }
-        if (req.provider === LOBSTERAI.id) {
-          const values2 = await collectCreditBalances(accounts, LOBSTERAI, {
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalance: (credential, product2) => fetchLobsteraiCreditBalance(credential, product2),
-            warn: (msg) => ctx.logger?.warn?.(msg)
-          });
-          return {
-            ok: true,
-            value: {
-              accounts: values2,
-              windowDays: buddyExpiringWindowDays()
-            }
-          };
         }
         if (isQoderFamily(req.provider)) {
           const { product: product2 } = requireQoderFamily(req.provider);
@@ -68635,7 +68574,7 @@ function apply(ctx, config = {}) {
     "llm-buddy",
     "llm-workbuddy",
     "llm-codearts",
-    "llm-lobsterai",
+
     "llm-qoder",
     "llm-qodercn",
     "llm-trae",
@@ -68827,37 +68766,6 @@ function apply(ctx, config = {}) {
     readImageRequest: makeReadImageRequest(ctx),
     accountPool: pool,
     product: WORKBUDDY
-  });
-  const lobsterai = new LobsteraiAuth(ctx);
-  const lobsteraiAdapter = registerLobsteraiLlm(ctx, {
-    credentialRef: credentialRef16(LOBSTERAI.defaultCredentialRef),
-    resolveCredential: async (modelId) => {
-      const available2 = await pool.getAvailableAccount(LOBSTERAI.id, modelId ?? "");
-      if (available2) {
-        reportLedgerAccount(LOBSTERAI.id, available2.entry.id);
-        return available2.credential;
-      }
-      const resolved = await ctx.credentials.resolve(credentialRef16(LOBSTERAI.defaultCredentialRef));
-      if (!resolved) return void 0;
-      try {
-        return JSON.parse(resolved.value);
-      } catch {
-        return void 0;
-      }
-    },
-    refresh: async () => {
-      const available2 = await pool.getAvailableAccount(LOBSTERAI.id, "");
-      if (available2) await lobsterai.refreshAccountCredential(available2.entry.credentialRef, pool, available2.entry.id);
-      else await lobsterai.refresh();
-    },
-    fetchRemoteModels: () => lobsterai.fetchModels(pool),
-    resolveClientVersion: () => lobsterai.resolveClientVersion(),
-    readImage: makeReadImage(ctx),
-    // 图片请求版本（缩放）桥接：issue !IKITT9。该家实测 13 张原图（≈50 MiB）
-    // 就回 `SERVER code=500`，撞的是请求体体积。
-    readImageRequest: makeReadImageRequest(ctx),
-    accountPool: pool,
-    product: LOBSTERAI
   });
   const qoder = new QoderAuth(ctx);
   const activeQoderAccountId = /* @__PURE__ */ new Map();
@@ -69391,15 +69299,6 @@ function apply(ctx, config = {}) {
   }).catch((error) => {
     ctx.logger.warn(`[channel-pack] \u4FEE\u6B63 TRAE \u8D26\u53F7\u663E\u793A\u540D\u5931\u8D25\uFF1A${String(error)}`);
   });
-  void lobsterai.repairAccountNicknames(pool).then((repaired) => {
-    if (repaired.length > 0) {
-      ctx.logger.info(
-        `[channel-pack] \u5DF2\u4FEE\u6B63 ${repaired.length} \u4E2A LobsterAI \u8D26\u53F7\u7684\u663E\u793A\u540D\uFF08\u624B\u673A\u53F7\u6539\u4E3A\u53EA\u9732\u672B 2 \u4F4D\uFF09\uFF1A${repaired.join(", ")}`
-      );
-    }
-  }).catch((error) => {
-    ctx.logger.warn(`[channel-pack] \u4FEE\u6B63 LobsterAI \u8D26\u53F7\u663E\u793A\u540D\u5931\u8D25\uFF1A${String(error)}`);
-  });
   void gemini.repairAccountNicknames(pool).then((repaired) => {
     if (repaired.length > 0) {
       ctx.logger.info(
@@ -69414,7 +69313,6 @@ function apply(ctx, config = {}) {
     ["codearts", (p) => service.refreshAll(p)],
     ["buddy", (p) => buddy.refreshAll(p)],
     ["workbuddy", (p) => workbuddy.refreshAll(p)],
-    ["lobsterai", (p) => lobsterai.refreshAll(p)],
     ["qoder", (p) => qoder.refreshAll(p)],
     ["qodercn", (p) => qoderCn.refreshAll(p)],
     ["trae", (p) => trae.refreshAll(p)],
@@ -69456,7 +69354,6 @@ function apply(ctx, config = {}) {
       service.stop();
       buddy.stop();
       workbuddy.stop();
-      lobsterai.stop();
       qoder.stop();
       qoderCn.stop();
       trae.stop();
@@ -69474,7 +69371,6 @@ function apply(ctx, config = {}) {
     service.stop();
     buddy.stop();
     workbuddy.stop();
-    lobsterai.stop();
     qoder.stop();
     qoderCn.stop();
     trae.stop();
@@ -69578,7 +69474,7 @@ function apply(ctx, config = {}) {
     codearts: pruned(PROVIDER, codearts),
     buddy: pruned("buddy", buddyAdapter),
     workbuddy: pruned("workbuddy", workbuddyAdapter),
-    lobsterai: pruned(LOBSTERAI.id, lobsteraiAdapter),
+    
     qoder: pruned(QODER.id, qoderAdapter),
     qodercn: pruned(QODER_CN.id, qoderCnAdapter),
     trae: pruned(TRAE.id, traeAdapter),
@@ -69594,7 +69490,7 @@ function apply(ctx, config = {}) {
     void geminiSigStore.flush().catch(() => {
     });
   });
-  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
+  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
     ...config,
     codeartsFetcher: signedNetwork.fetch
   });
