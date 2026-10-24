@@ -60,7 +60,7 @@ const PING_PROMPT = 'Reply with exactly: OK'
  * @param {string} [options.attributionUserAgent]
  * @param {AbortSignal} [options.signal]
  * @param {number} [options.timeoutMs]
- * @returns {Promise<{state:string, detail?:string, latencyMs:number, ttftMs?:number}>}
+ * @returns {Promise<{state:string, detail?:string, latencyMs:number, ttftMs?:number, retryAfterMs?:number}>}
  */
 export async function probeModel(model, { attributionUserAgent, signal, timeoutMs = 45000 } = {}) {
   const started = Date.now()
@@ -107,10 +107,18 @@ export async function probeModel(model, { attributionUserAgent, signal, timeoutM
     }
     return { state: STATE.available, latencyMs: Date.now() - started, ttftMs: firstDelta === undefined ? undefined : firstDelta - started }
   } catch (error) {
+    // 上游用 `Retry-After` 告诉我们它自己什么时候会重新放行 —— 免费车道的
+    // 额度用尽回 429 + `retry-after: 62001`，意思是「十七小时后」而不是
+    // 「一分钟后再试」。这个数字以前在 http.js 解析完就丢了，于是探测按固定
+    // 一小时信任期反复撞同一堵墙。带出来交给调用方决定下次什么时候问。
+    const retryAfterMs = Number.isFinite(error?.providerRetryAfterMs) && error.providerRetryAfterMs > 0
+      ? Math.trunc(error.providerRetryAfterMs)
+      : undefined
     return {
       state: stateOf(error),
       detail: typeof error?.message === 'string' ? error.message.slice(0, 200) : String(error),
       latencyMs: Date.now() - started,
+      ...retryAfterMs === undefined ? {} : { retryAfterMs },
     }
   }
 }

@@ -316,6 +316,12 @@ export function createModelRuntime({
    * `throttled` verdict. Re-confirming a model that already works is the one
    * probe with a negative payoff.
    */
+  // An upstream `Retry-After` can be hours (the free lane's daily window) or
+  // absurd (a misconfigured proxy answering `retry-after: 999999999`). Trust it
+  // up to a day and no further: past that the honest move is to look again
+  // rather than to keep a model off the picker forever on one header's word.
+  const MAX_PROBE_RETRY_MS = 24 * 60 * 60_000
+
   const PROBE_TTL_MS = {
     [STATE.available]: 60 * 60_000,
     [STATE.throttled]: 60 * 60_000,
@@ -333,6 +339,16 @@ export function createModelRuntime({
     if (only !== undefined) return only.includes(entry.id)
     if (force) return true
     const row = snapshot.results?.[entry.id]
+    // The upstream's own answer outranks our guess — in both directions. A 429
+    // carrying `retry-after: 62001` says the window reopens in seventeen hours,
+    // and the hourly TTL would spend a probe every hour to be told the same
+    // thing (on a shared quota a probe is a real inference call). A short
+    // `retry-after: 60` says the opposite: one minute, not the hour the TTL
+    // would impose, so the model comes back when the upstream said it would
+    // instead of an hour after. `retryAt` is absolute so a restart cannot reset
+    // the wait. No `retryAt` at all (every row written before this existed) is
+    // the only case the state TTL still governs.
+    if (typeof row?.retryAt === 'number' && row.retryAt > 0) return row.retryAt <= Date.now()
     const ttl = PROBE_TTL_MS[row?.state]
     if (ttl === undefined) return true
     return !(typeof row.at === 'number' && Date.now() - row.at < ttl)
@@ -367,6 +383,12 @@ export function createModelRuntime({
             state: result.state,
             ...result.detail === undefined ? {} : { detail: result.detail },
             ...result.ttftMs === undefined ? {} : { ttftMs: result.ttftMs },
+            // Absolute, not a duration: the file outlives the process, and a
+            // restart must not hand back a fresh hour of probes against a lane
+            // that already said when it reopens.
+            ...Number.isFinite(result.retryAfterMs) && result.retryAfterMs > 0
+              ? { retryAt: Date.now() + Math.min(result.retryAfterMs, MAX_PROBE_RETRY_MS) }
+              : {},
             latencyMs: result.latencyMs, startedAt: result.startedAt, at: Date.now(),
           },
         },

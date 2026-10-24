@@ -51,6 +51,7 @@ window.__ModuleLoader__.load({
         'state.region-blocked': '地区受限',
         'state.unavailable': '暂不可用',
         'state.throttled': '暂不可用',
+        'hint.retry': '上游免费额度已用尽，约 {when} 后恢复。',
         'state.unknown': '未探测',
         'state.listed': '已列出 · 未实测',
         'roster.selectable': '可选模型',
@@ -708,6 +709,7 @@ window.__ModuleLoader__.load({
         'state.region-blocked': 'Region-limited',
         'state.unavailable': 'Unavailable',
         'state.throttled': 'Temporarily unavailable',
+        'hint.retry': 'The upstream free quota is spent; it reopens in about {when}.',
         'state.unknown': 'Not probed',
         'state.listed': 'Listed · not tested',
         'roster.selectable': 'Selectable models',
@@ -2323,6 +2325,19 @@ window.__ModuleLoader__.load({
       return zh ? `${Math.round(hours / 24)} 天前` : `${Math.round(hours / 24)}d ago`
     }
 
+    /** 还要多久 —— 上游 `Retry-After` 给的是未来的时间点，卡片要说「约 17 小时后」。 */
+    function untilText(ts, locale) {
+      if (!ts) return '—'
+      const seconds = Math.max(1, Math.round((ts - Date.now()) / 1000))
+      const zh = String(locale ?? '').toLowerCase().startsWith('zh')
+      if (seconds < 60) return zh ? `${seconds} 秒` : `${seconds}s`
+      const minutes = Math.round(seconds / 60)
+      if (minutes < 60) return zh ? `${minutes} 分钟` : `${minutes}m`
+      const hours = Math.round(minutes / 60)
+      if (hours < 24) return zh ? `${hours} 小时` : `${hours}h`
+      return zh ? `${Math.round(hours / 24)} 天` : `${Math.round(hours / 24)}d`
+    }
+
     function copy(text, done) {
       const finish = ok => done(ok)
       if (navigator?.clipboard?.writeText !== undefined) {
@@ -2794,6 +2809,8 @@ window.__ModuleLoader__.load({
           : null,
         listed ? h('p', { className: 'ofm_note' }, t('hint.listed'))
           : manual && m.availability !== 'available' ? h('p', { className: 'ofm_note' }, m.detail || t(stateKey))
+          : m.availability === 'throttled' && m.retryAt > Date.now() ? h('p', { className: 'ofm_note', title: m.detail ?? '' },
+            t('hint.retry').replace('{when}', untilText(m.retryAt, t.locale)))
           : m.availability === 'region-blocked' ? h('p', { className: 'ofm_note' }, t('hint.region'))
           : m.availability === 'unknown' ? h('p', { className: 'ofm_note' }, t('hint.unknown'))
             : m.availability === 'unavailable' ? h('p', { className: 'ofm_note', title: m.detail ?? '' }, t('hint.hidden'))

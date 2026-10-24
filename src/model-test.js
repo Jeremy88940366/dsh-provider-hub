@@ -85,5 +85,10 @@ export function modelAvailability(id, snapshot, listed = false) {
     availability: measured?.state ?? 'unknown',
     detail: measured?.detail ?? '', probedAt: measured?.at ?? 0,
     ttftMs: measured?.ttftMs, latencyMs: measured?.latencyMs,
+    // When the upstream said it would reopen. A 429 carrying `retry-after`
+    // means "hours", not "a hiccup", and the card's one line has to be able to
+    // say which — an empty badge leaves the user guessing whether the model is
+    // broken or the day's quota is simply spent.
+    retryAt: typeof measured?.retryAt === 'number' ? measured.retryAt : 0,
   }
 }

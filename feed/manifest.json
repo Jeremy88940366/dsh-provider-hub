@@ -1,7 +1,7 @@
 {
-  "version": "3.7.18",
+  "version": "3.7.19",
   "base": "../",
-  "publishedAt": "2026-10-24T06:42:40.706Z",
+  "publishedAt": "2026-10-24T06:57:27.965Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 483955,
-      "sha256": "7ced8891cfb3aade7de33cdd981de389aca7108e431c651f4c8ba20a4f7d64ac"
+      "size": 485041,
+      "sha256": "d3743f1c9c8ea18bb3f4108e23ca9e3e09bf4f9ec5ba2fa13410425678efc490"
     },
     {
       "path": "cordis.patch.yml",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 3299,
-      "sha256": "512a1b73c0d7f3dc2352f34af10e50bed6aedbf57648e3001758524095d56937"
+      "sha256": "b58966dc8465b71ef0ac12ede64dc1b688aaa8dc979e04deb830badc93f627dd"
     },
     {
       "path": "src/adapter.js",
@@ -96,8 +96,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 25045,
-      "sha256": "de271d2b092f39224fea1482821aac492f0e6a5c031102fbedbc6638f7409ca7"
+      "size": 26578,
+      "sha256": "52b4f07963e9d642b8010c33774a80b6551b78e040dd0726e236de077d315936"
     },
     {
       "path": "src/core/stats.js",
@@ -176,8 +176,8 @@
     },
     {
       "path": "src/model-test.js",
-      "size": 4801,
-      "sha256": "bae72d9d8cf38bdfbd12f150170979270b9a5cf348a2aa74d0e2225630db6395"
+      "size": 5164,
+      "sha256": "85e48a449a8a9d24c6a8538e53d125a767f535f0c36d140994d376809b986a05"
     },
     {
       "path": "src/open-external.js",
@@ -186,8 +186,8 @@
     },
     {
       "path": "src/probe.js",
-      "size": 11466,
-      "sha256": "51382ecbd6d3eb7d8d2a91ec51ef052b66fafe8533011e721e7df643b9ac8926"
+      "size": 12124,
+      "sha256": "64416241b89d2957d3676c61d7f6a761e2a9a7057767ab57a45f372840fdac38"
     },
     {
       "path": "src/providers/index.js",
@@ -395,5 +395,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "CCb47LY+eKCwJROi8l3DJJujI1E3aqkHFuGTRZlKBpvnAyaxkULnATaLe54GjhFZUYQG38vHVqtYSu28kLiTAw=="
+  "signature": "TW1MZMz/9RhI6pp7hytnZ9GM3EH7psMJnn58gui9DJ4Noky2ohQo3Z0L/8xgvlNSbxj+7n6dDYrVU9eG9mg+Dw=="
 }
