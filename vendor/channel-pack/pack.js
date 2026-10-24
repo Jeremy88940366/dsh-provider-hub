@@ -30544,6 +30544,18 @@ var AccountPool = class {
     return this.readAccounts();
   }
   /**
+   * 列出某个 provider 下**已启用**的账号（含状态信息）。
+   *
+   * 与 `listAccounts` 的唯一区别是尊重 `enabled`。凡是要真的打上游的地方
+   * （签到、查余额、查额度）都必须走这个 —— 用户把账号停用就是不希望它再
+   * 发请求。停用账号的凭据通常已经失效（这正是停用的原因），继续打过去只
+   * 会每次都失败，还会把「今日签到」整体判成未完成。
+   */
+  async listEnabledAccounts(provider) {
+    const all = await this.listAccounts(provider);
+    return all.filter((entry) => entry.enabled !== false);
+  }
+  /**
    * 清理「凭据域名与当前产品配置不符」的账号。
    *
    * 用途：WorkBuddy provider 从中国版（copilot.tencent.com）改造为国际版
@@ -61081,8 +61093,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
   const autoCheckin = createAutoCheckin({
     store: createAutoCheckinStore(ctx),
     listProviderIds: async () => {
+      // 只看启用账号：某个 provider 的账号全停了，就不该再进签到循环。
       const accounts = await pool.listAllAccounts();
-      return [...new Set(accounts.map((entry) => entry.provider))].sort();
+      const enabled = accounts.filter((entry) => entry.enabled !== false);
+      return [...new Set(enabled.map((entry) => entry.provider))].sort();
     },
     claim: (provider) => handleMethod("credits.claimAll", { provider }),
     warn: (message2) => ctx.logger?.warn?.(message2)
@@ -62056,8 +62070,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       // 只对**未知** provider 生效。
       case "credits.status": {
         const req = payload;
+        // 停用账号不查状态：minimax 分支与通用分支都会真的打上游，
+        // 而停用账号的凭据多半已失效，白打一轮还会在面板上留下一条失败。
         if (req.provider === "codearts") {
-          const accounts2 = await pool.listAccounts(req.provider);
+          const accounts2 = await pool.listEnabledAccounts(req.provider);
           return {
             ok: true,
             value: {
@@ -62066,7 +62082,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
         }
         if (req.provider === TRAE.id) {
-          const accounts2 = await pool.listAccounts(req.provider);
+          const accounts2 = await pool.listEnabledAccounts(req.provider);
           return {
             ok: true,
             value: {
@@ -62075,7 +62091,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
         }
         if (req.provider === CLINE.id) {
-          const accounts2 = await pool.listAccounts(req.provider);
+          const accounts2 = await pool.listEnabledAccounts(req.provider);
           return {
             ok: true,
             value: {
@@ -62084,7 +62100,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
         }
         if (req.provider === LOOMY.id) {
-          const accounts2 = await pool.listAccounts(req.provider);
+          const accounts2 = await pool.listEnabledAccounts(req.provider);
           return {
             ok: true,
             value: {
@@ -62093,7 +62109,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
         }
         if (req.provider === MINIMAX.id) {
-          const minimaxStatusAccounts = await pool.listAccounts(req.provider);
+          const minimaxStatusAccounts = await pool.listEnabledAccounts(req.provider);
           const value = await collectCreditsStatus(
             minimaxStatusAccounts,
             void 0,
@@ -62109,7 +62125,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (product === void 0) {
           return { ok: false, error: { code: "bad-request", message: `unsupported provider: ${req.provider}` } };
         }
-        const accounts = await pool.listAccounts(req.provider);
+        const accounts = await pool.listEnabledAccounts(req.provider);
         const results = await collectCreditsStatus(accounts, product, {
           resolve: (ref) => ctx.credentials.resolve(ref),
           warn: (msg) => ctx.logger?.warn?.(msg)
@@ -62119,7 +62135,9 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       // 一键领取：逐账号顺序执行（并发易触发风控），单个账号失败不中断整体。
       case "credits.claimAll": {
         const req = payload;
-        const accounts = await pool.listAccounts(req.provider);
+        // 只签启用的账号：停用账号的凭据多半已失效，打过去必然失败，
+        // 而那一次失败会把整轮判成「今日签到未完成」。
+        const accounts = await pool.listEnabledAccounts(req.provider);
         if (isQoderFamily(req.provider)) {
           const { product: product2 } = requireQoderFamily(req.provider);
           const value2 = await collectClaimResults(accounts, void 0, {
@@ -62282,7 +62300,8 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       // 网络耗时拖慢，且一次查询失败会让整份列表都取不到。
       case "credits.balances": {
         const req = payload;
-        const accounts = await pool.listAccounts(req.provider);
+        // 同上：停用账号不查余额，避免每次开面板都白打一轮上游。
+        const accounts = await pool.listEnabledAccounts(req.provider);
         if (req.provider === "codearts") {
           const values2 = await collectCreditBalances(accounts, void 0, {
             resolve: (ref) => ctx.credentials.resolve(ref),
@@ -62623,7 +62642,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (typeof req.provider !== "string" || req.provider !== CLINE.id) {
           return { ok: false, error: { code: "bad-request", message: `unsupported provider: ${String(req.provider)}` } };
         }
-        const accounts = await pool.listAccounts(req.provider);
+        const accounts = await pool.listEnabledAccounts(req.provider);
         const values = [];
         for (const account of accounts) {
           const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));

@@ -4327,6 +4327,9 @@ window.__ModuleLoader__.load({
                   (() => {
                     const balance = balanceOf(row.id)
                     if (!creditCapability) return null
+                    // 停用账号不再查余额（服务端只查启用的），所以这里没有它的行。
+                    // 落到下面的「不可用」分支会把它标成红色错误，读起来像查询失败。
+                    if (row.enabled === false) return null
                     if (balanceLoading) return h('span', { className: 'ofm_note' }, t('chan.credits.loading'))
                     const result = (balances ?? []).find(entry => entry.accountId === row.id)
                     if (balance === null || !Number.isFinite(balance.total)) return h('span', { className: 'ofm_balanceerror' },

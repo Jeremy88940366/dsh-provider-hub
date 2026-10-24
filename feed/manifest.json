@@ -1,7 +1,7 @@
 {
-  "version": "3.7.17",
+  "version": "3.7.18",
   "base": "../",
-  "publishedAt": "2026-10-24T06:31:03.347Z",
+  "publishedAt": "2026-10-24T06:42:40.706Z",
   "notes": "",
   "files": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "path": "client.js",
-      "size": 483665,
-      "sha256": "00514f68e292d99395dda2cad3f1fa13adb90bd2a4ac0981613351470920384e"
+      "size": 483955,
+      "sha256": "7ced8891cfb3aade7de33cdd981de389aca7108e431c651f4c8ba20a4f7d64ac"
     },
     {
       "path": "cordis.patch.yml",
@@ -52,7 +52,7 @@
     {
       "path": "package.json",
       "size": 3299,
-      "sha256": "502654863296abb5e0e8403abe0b91060e1ff4361905d8e0c43c2285dc9f5057"
+      "sha256": "512a1b73c0d7f3dc2352f34af10e50bed6aedbf57648e3001758524095d56937"
     },
     {
       "path": "src/adapter.js",
@@ -386,8 +386,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 2925094,
-      "sha256": "191536855eaafb260f098fef739729f413da39c3b433859b3d006f4fbd5fbb22"
+      "size": 2926435,
+      "sha256": "23e7d560a1712366dd24e834132f9644a255a7a019dddf67729547a2b5e2a211"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
@@ -395,5 +395,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "BTY2tzEnoSDTS39LuszyxSbAP94CdhlvqDpsyuvggczmTGngXbqbTDwRg1XsBvNKNl3ARcQdZ7odH7205lJ9CA=="
+  "signature": "CCb47LY+eKCwJROi8l3DJJujI1E3aqkHFuGTRZlKBpvnAyaxkULnATaLe54GjhFZUYQG38vHVqtYSu28kLiTAw=="
 }
