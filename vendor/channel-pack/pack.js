@@ -60324,7 +60324,12 @@ var DEFAULT_AUTO_CHECKIN = {
   lastResult: "",
   lastAt: 0,
   channels: [],
-  dismissedRunAt: 0
+  dismissedRunAt: 0,
+  lastPendingDate: "",
+  lastPendingProviders: [],
+  attemptDate: "",
+  attempts: 0,
+  nextAttemptAt: 0
 };
 var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 var MAX_CHANNEL_ENTRIES = 24;
@@ -60355,7 +60360,15 @@ function sanitizeAutoCheckin(raw) {
     lastResult: typeof record.lastResult === "string" ? record.lastResult : "",
     lastAt: ms(record.lastAt),
     channels: sanitizeChannels(record.channels),
-    dismissedRunAt: ms(record.dismissedRunAt)
+    dismissedRunAt: ms(record.dismissedRunAt),
+    // ⚠️ 这五个字段 3.7.2 就加了，但**一直没写进文件、也没读回来** ——
+    // 于是「今日待补签」「今天试过几次」每次重启都归零：徽章永远不会显示
+    // 「未完成」，重试封顶也从来没生效过。持久化是这套状态能成立的前提。
+    lastPendingDate: typeof record.lastPendingDate === "string" && DATE_RE.test(record.lastPendingDate) ? record.lastPendingDate : "",
+    lastPendingProviders: Array.isArray(record.lastPendingProviders) ? record.lastPendingProviders.filter((id) => typeof id === "string" && id.length > 0).slice(0, MAX_CHANNEL_ENTRIES) : [],
+    attemptDate: typeof record.attemptDate === "string" && DATE_RE.test(record.attemptDate) ? record.attemptDate : "",
+    attempts: Number.isSafeInteger(record.attempts) && record.attempts > 0 ? Math.min(record.attempts, 99) : 0,
+    nextAttemptAt: ms(record.nextAttemptAt)
   };
 }
 function utc8DateString(nowMs = Date.now()) {
@@ -60368,8 +60381,18 @@ var AUTO_CHECKIN_DELAY_MS = 3e4;
  *
  * `lastDate` 只在「所有渠道都签完」时才置今天；有渠道报错或失败就留空，下次启动
  * 会再试一遍。给这个重试封顶，免得某个渠道长期失败时每次启动都把账号全打一遍。
+ *
+ * ⚠️ 光有次数上限不够：重试**只在启动时发生**，而用户完全可能在一个小时内连开
+ * 关三次 DSH —— 三次机会就此烧光，等上游真正重置时反而一次都不剩。所以每次失败
+ * 还要记一个「最早什么时候可以再试」，退避阶梯见下。
  */
-const AUTO_CHECKIN_MAX_ATTEMPTS = 3;
+const AUTO_CHECKIN_MAX_ATTEMPTS = 4;
+/**
+ * 第 N 次失败后要等多久才允许再试。取值按「撑过一整天」排：凌晨启动第一次失败后
+ * 半小时再试，仍失败就推到两小时后，再失败六小时，再失败十二小时 —— 覆盖到当天
+ * 晚上，上游无论什么时候重置都至少还有一次机会落在重置之后。
+ */
+const AUTO_CHECKIN_RETRY_DELAYS_MS = [30 * 60e3, 2 * 60 * 60e3, 6 * 60 * 60e3, 12 * 60 * 60e3];
 
 function autoCheckinDelayMs(env = process.env) {
   const raw = env[DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS];
@@ -60412,7 +60435,12 @@ var FileAutoCheckinStore = class {
       lastResult: doc.lastResult,
       lastAt: doc.lastAt,
       channels: doc.channels,
-      dismissedRunAt: doc.dismissedRunAt
+      dismissedRunAt: doc.dismissedRunAt,
+      lastPendingDate: doc.lastPendingDate,
+      lastPendingProviders: doc.lastPendingProviders,
+      attemptDate: doc.attemptDate,
+      attempts: doc.attempts,
+      nextAttemptAt: doc.nextAttemptAt
     }, null, 2), "utf-8");
     renameSync6(tmp, this.path);
   }
@@ -60569,13 +60597,17 @@ function createAutoCheckin(deps) {
     const pendingProviders = channels
       .filter((entry) => (Number(entry.failed) || 0) + (Number(entry.errors) || 0) > 0)
       .map((entry) => entry.provider);
-    const doneToday = pendingProviders.length === 0 && totals.coversToday > 0;
-    if (pendingProviders.length === 0 && !doneToday) {
-      deps.warn?.(
-        `[channel-pack] 自动签到未记入今日（下次启动会重试）：${describeRun(totals)}`
-      );
+    // 「今天没有待办」同样要落盘：`coversToday === 0` 只说明今天没有可领的积分
+    // （账号都已领过、或这些渠道压根没有签到接口），不代表还有活没干完。
+    // 旧判据要求 `coversToday > 0`，于是「全部渠道都无签到接口」的账号每次启动
+    // 都把整池打一遍，永远不判完成 —— 而这一遍同样是对上游的真实请求。
+    const doneToday = pendingProviders.length === 0 && providers.length > 0;
+    if (providers.length === 0) {
+      deps.warn?.(`[channel-pack] 自动签到：账号池为空，本次跳过`);
       return;
     }
+
+    const attempts = doc.attemptDate === today() ? (Number(doc.attempts) || 0) + 1 : 1;
     doc = {
       ...doc,
       // 只有真的签完才置今天；有渠道待补签时留空，`runIfDue` 下次启动会再来一遍。
@@ -60583,7 +60615,9 @@ function createAutoCheckin(deps) {
       lastPendingDate: doneToday ? "" : today(),
       lastPendingProviders: doneToday ? [] : pendingProviders,
       attemptDate: today(),
-      attempts: doc.attemptDate === today() ? (Number(doc.attempts) || 0) + 1 : 1,
+      attempts,
+      // 签完了就不必再退避；没签完则按第几次失败排下一次的时间。
+      nextAttemptAt: doneToday ? 0 : now() + AUTO_CHECKIN_RETRY_DELAYS_MS[Math.min(attempts - 1, AUTO_CHECKIN_RETRY_DELAYS_MS.length - 1)],
       lastResult: describeRun(totals),
       lastAt: now(),
       channels,
@@ -60604,6 +60638,8 @@ function createAutoCheckin(deps) {
     if (doc.lastDate !== "" && doc.lastDate === today()) return Promise.resolve();
     // 待补签状态会绕过上面那条提前返回；重试次数封顶，别把失败渠道打成扫描器。
     if (doc.attemptDate === today() && (Number(doc.attempts) || 0) >= AUTO_CHECKIN_MAX_ATTEMPTS) return Promise.resolve();
+    // 还没到退避结束时间就跳过 —— 跳过**不算一次尝试**，次数留给真正发出去的那次。
+    if (Number(doc.nextAttemptAt) > 0 && now() < Number(doc.nextAttemptAt)) return Promise.resolve();
     running2 = true;
     const task = performRun().catch((error) => {
       deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5F02\u5E38: ${String(error)}`);
@@ -60672,6 +60708,7 @@ function createAutoCheckin(deps) {
           lastPendingProviders: [provider],
           attemptDate: "",
           attempts: 0,
+          nextAttemptAt: 0,
           channels: channels2
         };
       } else {
