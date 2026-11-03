@@ -61,6 +61,36 @@ function mintToolCallId() {
   return `call_${crypto.randomBytes(12).toString('hex')}`
 }
 
+/**
+ * Whether a tool-call argument string was cut off mid-way rather than being a
+ * complete-but-invalid JSON value.
+ *
+ * The two are not the same failure. A truncated string is an unexecutable call
+ * the gateway finished with "tool_calls" anyway (verified live 2026-09-25), so
+ * the turn has to be downgraded to max-tokens and retried. A *complete* value
+ * that simply violates the tool's schema — `{"n": "many"}` where the schema
+ * wants a number — is a normal call the model can be asked to fix; treating it
+ * as truncation kills every recovery path (#474).
+ */
+function argumentsCutMidway(raw) {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (const ch of raw) {
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+    } else if (ch === '"') inString = true
+    else if (ch === '{' || ch === '[') depth += 1
+    else if (ch === '}' || ch === ']') depth -= 1
+  }
+  // Unbalanced is incomplete in either direction: a negative depth is the
+  // lost-prefix fragment shape (`"path.txt"}`), which belongs on the proven
+  // retry path, not on the complete-but-invalid one.
+  return inString || depth !== 0
+}
+
 class BlockSink {
   constructor(yieldChunk, startIndex, checkpointLimit, onProgress) {
     this.emit = yieldChunk
@@ -191,7 +221,7 @@ class BlockSink {
         // cannot be trusted; the adapter downgrades such a turn to max-tokens,
         // which makes the harness's assembler prune the call instead of
         // executing it and looping on the model's retry.
-        try { JSON.parse(block.args === '' ? '{}' : block.args) } catch { this.brokenToolCall = true }
+        try { JSON.parse(block.args === '' ? '{}' : block.args) } catch { this.brokenToolCall = argumentsCutMidway(block.args) }
         // So is a call that never learned its name (issue #92): a relayed model
         // leaked its tool markup mid-text, the gateway half-parsed it into an
         // empty-named call shell, and the harness executed the nameless call as

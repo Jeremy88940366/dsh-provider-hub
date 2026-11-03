@@ -64,7 +64,9 @@ const PING_PROMPT = 'Reply with exactly: OK'
  */
 export async function probeModel(model, { attributionUserAgent, signal, timeoutMs = 45000 } = {}) {
   const started = Date.now()
-  const session = sessionForConversation('probe:provider-hub')
+  // 每个模型独立的上游会话。免费道的配额按会话计数，整轮共用一个会话
+  // 会让第一个模型吃掉本次配额、其余模型全部读作 429（issue #561）。
+  const session = sessionForConversation('probe:provider-hub:' + model.id)
   const wire = wireFor(model.id)
   const body = buildPing(model.id, wire)
   // 三条线各有自己的工具形状：Responses 是扁平项，Messages 是 Claude 的

@@ -44,6 +44,42 @@ export const ROUTE_LABELS = {
 
 const STYLE_FOR_WIRE = { chat: 'chat', responses: 'flat', messages: 'claude' }
 
+/**
+ * How long a combo candidate may stay silent before the chain walks past it.
+ *
+ * A candidate that opened its stream and then never produced a first token used
+ * to hold the whole chain: `iterator.next()` has no timeout of its own, and the
+ * upstream idle deadline only fires once a read is pending *and* the gateway has
+ * stopped sending. A model that answers the handshake and then goes quiet leaves
+ * the user staring at an empty turn with four healthy candidates behind it
+ * (#630).
+ */
+const CHAIN_SILENCE_MS = 45000
+
+/** Sentinel returned by `nextOrSilence` when the candidate produced nothing. */
+const SILENT_CANDIDATE = Symbol('silent-candidate')
+
+/**
+ * Await one row of a candidate's turn, giving up after `ms` of silence.
+ *
+ * A timeout is reported as an advanceable end-of-try, so `runCombo` walks on
+ * exactly as it would after a classified failure.
+ */
+async function nextOrSilence(iterator, ms) {
+  let timer
+  try {
+    const silence = new Promise(resolve => { timer = setTimeout(() => resolve(SILENT_CANDIDATE), ms) })
+    const row = await Promise.race([iterator.next(), silence])
+    if (row !== SILENT_CANDIDATE) return row
+    // Best effort: a pending next() cannot be interrupted, but the generator's
+    // own finally blocks abort its transport once it settles.
+    try { iterator.return?.(undefined) } catch {}
+    return { done: true, value: { advance: true, verdict: null } }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export class FreeModelAdapter {
   /**
    * @param {object} dependencies
@@ -250,7 +286,7 @@ export class FreeModelAdapter {
       let result
       const held = []
       while (true) {
-        const row = await iterator.next()
+        const row = committed ? await iterator.next() : await nextOrSilence(iterator, CHAIN_SILENCE_MS)
         if (row.done === true) { result = row.value; break }
         if (committed) { yield row.value; continue }
         held.push(row.value)

@@ -47,6 +47,8 @@
  * @module src/upstream.js
  */
 
+import { randomBytes } from 'node:crypto'
+
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -374,7 +376,33 @@ export function wireFor(modelId) {
  * - **不带 `x-opencode-request`** —— 那是 v1 专用头，v2 收到就回 403；
  * - `x-opencode-client: cli` 与官方 CLI 一致。
  */
-export function gatewayHeaders({ session, stream, accept }) {
+/** 40 hex = 20 字节：免费道的项目 id 就是这个宽度。 */
+const PROJECT_ID_BYTES = 20
+
+/**
+ * 一个全新的 40-hex 项目 id。
+ *
+ * 免费道的配额按「项目 id × 出口」记账，而共享的 `global` 桶到我们手上时通常
+ * 已经被别人烧尽 —— 这也是为什么所有免费模型会齐刷刷回 429。上游 v2.8.0 的
+ * 做法是每个请求现铸一个项目 id（参考网关 opencode2api v1.4.6 的行为），让配额
+ * 记在一组互不相干的桶上；调用方自己给了 `global` 或 40-hex 就原样透传。
+ */
+export function randomProjectId() {
+  let out = ''
+  const bytes = randomBytes(PROJECT_ID_BYTES)
+  for (let i = 0; i < bytes.length; i += 1) out += bytes[i].toString(16).padStart(2, '0')
+  return out
+}
+
+/** 调用方给的 project 信号能不能直接用。 */
+function usableProject(value) {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (trimmed === 'global') return trimmed
+  return /^[0-9a-f]{40}$/i.test(trimmed) ? trimmed : ''
+}
+
+export function gatewayHeaders({ session, stream, accept, project }) {
   const headers = {
     'content-type': 'application/json',
     'authorization': 'Bearer public',
@@ -384,7 +412,8 @@ export function gatewayHeaders({ session, stream, accept }) {
     'x-opencode-session-id': session,
     'x-session-affinity': session,
     'x-session-id': session,
-    'x-opencode-project': 'global',
+    // 每请求一个项目 id，别用共享 `global` 桶 —— 那个桶是烧尽的。
+    'x-opencode-project': usableProject(project) || randomProjectId(),
     'accept': accept ?? (stream ? 'text/event-stream' : '*/*'),
   }
   return headers

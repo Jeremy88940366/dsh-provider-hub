@@ -1,7 +1,7 @@
 {
-  "version": "3.7.19",
+  "version": "3.8.0",
   "base": "../",
-  "publishedAt": "2026-10-24T06:57:27.965Z",
+  "publishedAt": "2026-11-03T09:19:57.671Z",
   "notes": "",
   "files": [
     {
@@ -51,13 +51,13 @@
     },
     {
       "path": "package.json",
-      "size": 3299,
-      "sha256": "b58966dc8465b71ef0ac12ede64dc1b688aaa8dc979e04deb830badc93f627dd"
+      "size": 3298,
+      "sha256": "64a5388137dc9e22e96968ef29ea299b3bd218c7911bcb2dbda347c2e565824e"
     },
     {
       "path": "src/adapter.js",
-      "size": 43305,
-      "sha256": "92e04468910d592511342a4b1b37f329d519f1334675c3459bbeb2c4e0127723"
+      "size": 44830,
+      "sha256": "1fe535094087a088c876a8d744a69539c86d07a7880e401e604254888ad6f260"
     },
     {
       "path": "src/aggregate.js",
@@ -71,8 +71,8 @@
     },
     {
       "path": "src/catalog.js",
-      "size": 28705,
-      "sha256": "73a17a114fa1f9ff000503ff8af25e591e3cd4a98c93921e3f5472461e48eaab"
+      "size": 29089,
+      "sha256": "bc550a517591c8e85868dff74251f26ebf244e42cd33b26a1727ea3388db9c9c"
     },
     {
       "path": "src/chan-relay.js",
@@ -146,8 +146,8 @@
     },
     {
       "path": "src/http.js",
-      "size": 28594,
-      "sha256": "e9093114dfe76669027b387e34e341823128953874f31998ff015a33ca4c1963"
+      "size": 29397,
+      "sha256": "aab14732eb30d2c86f244c7d48afc22d81aa9f60359ade94b176a7a659dd541c"
     },
     {
       "path": "src/image-pricing.d.ts",
@@ -186,8 +186,8 @@
     },
     {
       "path": "src/probe.js",
-      "size": 12124,
-      "sha256": "64416241b89d2957d3676c61d7f6a761e2a9a7057767ab57a45f372840fdac38"
+      "size": 12333,
+      "sha256": "d3b96418dbab92731499051226b5a3e3bed2fa7b62579033eab34c35899644de"
     },
     {
       "path": "src/providers/index.js",
@@ -226,8 +226,8 @@
     },
     {
       "path": "src/stream.js",
-      "size": 27586,
-      "sha256": "8be4cc49eb0e4219c52f4fd161e9d0345081f46e99eb2867d8b6eee3348531ad"
+      "size": 28842,
+      "sha256": "d3c4c5195f5e1a3f2cec211e34f7828b77add168324a3b46fad5d3c565787df3"
     },
     {
       "path": "src/token-saver/index.js",
@@ -351,8 +351,8 @@
     },
     {
       "path": "src/upstream.js",
-      "size": 28946,
-      "sha256": "7b983a32efbafe7f43ccc5ada65d7967d143f45513e9a517ef7dcafe592446df"
+      "size": 30168,
+      "sha256": "9fd76fcdd915c02a03647b16063042a824a4766ce7670237c1dda94e69e23c6a"
     },
     {
       "path": "src/vault-anchor.js",
@@ -395,5 +395,5 @@
       "sha256": "6419471effa631519def7797d76d7ede38b9fcfa9a83c2148c8ef5d43355b43d"
     }
   ],
-  "signature": "TW1MZMz/9RhI6pp7hytnZ9GM3EH7psMJnn58gui9DJ4Noky2ohQo3Z0L/8xgvlNSbxj+7n6dDYrVU9eG9mg+Dw=="
+  "signature": "ugAfs3LJgwwbxPib4jfKnRBhjVazqdMzAtLeNcT8XRU4EO7upk6p/daIwOoxYHiW9bDStnNHu2W6stFtVvPBBg=="
 }

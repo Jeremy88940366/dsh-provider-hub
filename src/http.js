@@ -444,6 +444,10 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
   let data = []
   let rawJson = ''
   let deadline = Date.now() + timeoutMs
+  // Wound only by real content: a gateway that keeps the connection open with
+  // `: ping` comment frames would otherwise re-arm the idle deadline forever, so
+  // a wedged turn could never time out (#460).
+  let content = false
   let stopped = false
   const stop = () => {
     if (stopped) return
@@ -486,7 +490,10 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
     const payload = data.join('\n')
     data = []
     if (payload.trim() === '[DONE]') return true
-    if (payload !== '') onData(payload)
+    if (payload !== '') {
+      onData(payload)
+      content = true
+    }
     return false
   }
   const completeData = () => {
@@ -509,6 +516,7 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
       rawJson = ''
       if (payload?.error || payload?.type === 'error') throw classifyFailure(undefined, payload)
       onData(JSON.stringify(payload))
+      content = true
       return false
     }
     if (text === '') return dispatch()
@@ -520,6 +528,7 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
       // Compatible endpoints may omit blank separators between complete JSON events.
       if (completeData() && dispatch()) return true
       if (valueText.trim() === '[DONE]') { dispatch(); return true }
+      if (valueText !== '') content = true
       data.push(valueText)
     }
     return false
@@ -542,7 +551,16 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
         newline = buffer.indexOf('\n', start)
       }
       if (start > 0) buffer = buffer.slice(start)
-      deadline = Date.now() + timeoutMs
+      // A row still waiting for its newline counts as progress unless what has
+      // arrived so far is itself a comment: `: ping` split across two reads must
+      // not wind the clock, while a raw-JSON body or a half-arrived `data:` line
+      // must.
+      const pending = buffer.replace(/^\uFEFF/, '').replace(/\r$/, '')
+      if (pending.trim() !== '' && !pending.trimStart().startsWith(':')) content = true
+      if (content) {
+        content = false
+        deadline = Date.now() + timeoutMs
+      }
     }
     // Flush the decoder so a multi-byte character split over the last two chunks
     // is not silently dropped from the final payload.

@@ -178,7 +178,13 @@ export function capabilitiesFor(modelId) {
   const base = baseModelId(modelId)
   const override = FREE_ID_OVERRIDES[base]
   if (override !== undefined) return { reasoning: true, ...override }
-  for (const entry of CAPABILITIES) if (entry.match.test(base)) return entry
+  for (const entry of CAPABILITIES) {
+    if (!entry.match.test(base)) continue
+    // 厂商自己用 `-vl` 段标视觉变体（nemotron-3.5-super-vl 就是这样发布的）。
+    // 早于该变体存在的家族行不能把变体当成纯文本模型（issue #458）。
+    if (!entry.vision && /(?:^|[-_])vl(?:$|[-_.])/i.test(base)) return { ...entry, vision: true }
+    return entry
+  }
   return { vision: false, reasoning: true, contextWindow: 131072, maxOutput: 32768 }
 }
 
@@ -276,6 +282,7 @@ const EAC_DISPLAY_NAMES = {
   'openai/gpt-oss-20b': 'GPT-OSS 20B',
   'z-ai/glm-5.3': 'GLM 5.3',
   'z-ai/glm-5.3-flash': 'GLM 5.3 Flash',
+  'mistralai/mistral-large-4-1t-a52b': 'Mistral Large 4 1T A52B',
 }
 
 /**
