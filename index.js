@@ -432,7 +432,7 @@ export function apply(ctx, config) {
   })
 
   ctx.on?.('loader/volatile-update', () => {
-    registration.replace(routes())
+    republishRoutes()
   })
 
   /**
@@ -1425,6 +1425,17 @@ export function apply(ctx, config) {
         await refreshCatalog({ probe: true, force: true })
       } catch (error) {
         logger.warn?.(`provider-hub: startup refresh failed (${error?.message ?? error})`)
+        // One quiet retry. A listing that failed at boot leaves the catalog
+        // empty, and an empty catalog means an empty membership, which means
+        // the picker shows nothing under this provider until the next probe
+        // interval — fifteen minutes of a plugin that looks broken.
+        const again = setTimeout(() => {
+          if (disposed) return
+          void refreshCatalog({ probe: true })
+            .then(() => { if (!disposed) emitTopology() })
+            .catch(() => {})
+        }, 60_000)
+        again.unref?.()
       }
       if (disposed) return
       syncWatcher()
@@ -1550,9 +1561,30 @@ export function apply(ctx, config) {
   // reload does not re-toast the same version.
   refreshUpdatePush = () => pushUpdate(false)
 
+  /**
+   * Hand the kernel the route set the membership currently implies.
+   *
+   * An empty set is not a legal registration: the kernel throws
+   * `an adapter must register at least one provider`, and that throw used to
+   * escape the boot chain — the plugin stayed up with no routes, so the picker
+   * offered nothing at all until something reloaded the plugin. An empty
+   * membership only means the catalog has not landed yet (a failed listing, a
+   * probe round that never answered), which is not evidence that the user's
+   * models stopped existing. Keeping the previous routes is the honest outcome.
+   */
+  function republishRoutes() {
+    const next = routes()
+    if (next.length === 0) return
+    try {
+      registration.replace(next)
+    } catch (error) {
+      logger.warn?.(`provider-hub: route re-registration failed (${error?.message ?? error})`)
+    }
+  }
+
   function emitTopology() {
     try { ctx.emit?.('llm/adapters-updated') } catch { /* no listener surface */ }
-    registration.replace(routes())
+    republishRoutes()
   }
 }
 
